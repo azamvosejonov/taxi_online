@@ -1,0 +1,23 @@
+
+=== Slayd 1 ===
+
+Boshliq paneli
+Aperator paneli
+Taksi ilovasi
+
+=== Slayd 2 ===
+
+Boshliq paneli
+Boshliq paneli bir kunda qancha pull topayotganligi korinishi kere kun yakunida . Bir oyda qancha pul topayotganligini korish kere . Bu bazaga aylanadi va oyma-oy yigilib boradi . 1 oyda qancha pul topayotganligini bazada korinib yigilib boradi . 1 yilgacha daromadi yigilib boradi bazada . Faqat oylik daromad bazaga kiradi .
+
+=== Slayd 3 ===
+
+Aperator paneli
+Aperator panelida id ochib bera oladi taksislar uchun . Shu id orqali taksislar balansiga pul tashab bera olishadi .
+Paynet orqalig ham tolov qila olishlari kere . taksistlar
+Zakaz olish tizimi qisqaraqam .
+Misol uchun : 1310 
+Telefon qilinib aperator zakaz olgandan kegin taksislarga zakazzi joy nomi qaysi mahallaga ekanligi haqida yoziladi . Taksislarga bu joy nomi korinishida boradi . Mijzning telefon raqami zakaz qabul qilganidan song tashlab beriladi . Avtomatik tarizda .
+Aperatorlar qilishshi kere boladigan ishlar : Joy nomini yozib korsatishlari kere . Barcha taksislarga korinadi . Zakaz qabul qilinganidan kegin zakaz avtomatik korinishda zakaz panelidan olib tashlanadi .
+Tariflar bu tariflarni aperatorlar mashina rusumi (madeli)ga qarab qimat yoki arzon boladi .
+Misol uchun: ( start gold platinum ) start ga (matiz ,
