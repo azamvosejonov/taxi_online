@@ -79,9 +79,9 @@ services:
   # Flower for Celery monitoring
   flower:
     build: .
-    command: /home/appuser/.local/bin/flower -A main.celery_app --port=5555
+    command: /home/appuser/.local/bin/flower -A main.celery_app --port=8050
     ports:
-      - "5555:5555"
+      - "8050:8050"
     environment:
       DATABASE_URL: postgresql://royaltaxi_user:royaltaxi_password@db:5432/royaltaxi
       REDIS_URL: redis://redis:6379
