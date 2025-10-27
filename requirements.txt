@@ -72,6 +72,7 @@ pyflakes==3.4.0
 Pygments==2.19.2
 PyJWT==1.7.1
 pyparsing==3.2.5
+psycopg2-binary==2.9.9
 pytesseract==0.3.13
 pytest==8.4.2
 pytest-asyncio==1.2.0
