@@ -79,7 +79,7 @@ services:
   # Flower for Celery monitoring
   flower:
     build: .
-    command: /home/appuser/.local/bin/flower -A main.celery_app --port=8050
+    command: python -m flower -A main.celery_app --port=8050 --broker=redis://redis:6379/0
     ports:
       - "8050:8050"
     environment:
@@ -87,6 +87,7 @@ services:
       REDIS_URL: redis://redis:6379
     depends_on:
       - redis
+      - celery-worker
 
 volumes:
   postgres_data:
