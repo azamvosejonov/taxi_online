@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import HTMLResponse
 from firebase_admin import credentials
+from celery import Celery
 from starlette.types import Lifespan
 import os
 
@@ -24,6 +25,21 @@ from routers.driver import router as driver_router
 
 # Import models for table creation
 from models import *  # noqa
+
+# Configure Celery application (used by worker/beat/flower via main.celery_app)
+celery_app = Celery(
+    "royaltaxi",
+    broker=settings.redis_url,
+    backend=settings.redis_url
+)
+
+celery_app.conf.update(
+    task_serializer="json",
+    accept_content=["json"],
+    result_serializer="json",
+    timezone="UTC",
+    enable_utc=True
+)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

@@ -9,11 +9,15 @@ from config import settings
 # Database URL for SQLAlchemy
 SQLALCHEMY_DATABASE_URL = settings.database_url
 
-# Create SQLAlchemy engine
+# Create SQLAlchemy engine (handle SQLite vs. other drivers)
+engine_kwargs = {"pool_pre_ping": True}
+
+if SQLALCHEMY_DATABASE_URL.startswith("sqlite"):
+    engine_kwargs["connect_args"] = {"check_same_thread": False}
+
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL,
-    connect_args={"check_same_thread": False},
-    pool_pre_ping=True
+    **engine_kwargs
 )
 
 # Create SessionLocal class
