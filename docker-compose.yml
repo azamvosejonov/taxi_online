@@ -9,10 +9,11 @@ services:
     environment:
       - DATABASE_URL=postgresql://royaltaxi:royaltaxi123@db:5432/royaltaxi
       - PYTHONUNBUFFERED=1
+      - PORT=8080   # 🔥 ichki server porti 8080 bo‘lishi uchun
     volumes:
       - .:/app
     ports:
-      - "8081:8080"
+      - "8080:8080"  # 🔥 tashqi ham, ichki ham 8080
     depends_on:
       db:
         condition: service_healthy
@@ -39,7 +40,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./init-db:/docker-entrypoint-initdb.d/
     ports:
-      - "5433:5432"  # ⚠️ Tashqi portni 5433 qildik
+      - "5433:5432"  # tashqi 5433, ichki 5432
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U royaltaxi -d royaltaxi"]
       interval: 5s
