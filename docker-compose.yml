@@ -79,7 +79,7 @@ services:
   # Flower for Celery monitoring
   flower:
     build: .
-    command: /usr/local/bin/flower --app=main.celery_app --address=0.0.0.0 --port=8050 --broker=redis://redis:6379/0
+    command: python -m flower --app=main.celery_app --address=0.0.0.0 --port=8050 --broker=redis://redis:6379/0
     ports:
       - "8050:8050"
     environment:
