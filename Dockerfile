@@ -22,6 +22,7 @@ RUN adduser --disabled-password --gecos '' appuser
 # Copy requirements and install Python dependencies
 COPY --chown=appuser:appuser requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt && \
+    pip install --no-cache-dir --upgrade --force-reinstall redis==4.5.5 && \
     pip install --no-cache-dir flower==2.0.1
 
 # Copy project
