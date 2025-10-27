@@ -1,91 +1,74 @@
 services:
-  # PostgreSQL Database
-  db:
-    image: postgres:15
-    environment:
-      POSTGRES_DB: royaltaxi
-      POSTGRES_USER: royaltaxi_user
-      POSTGRES_PASSWORD: royaltaxi_password
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "15432:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U royaltaxi_user -d royaltaxi"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # Redis for caching and rate limiting
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # Main application
   app:
-    build: .
+    build:
+      context: .
+      target: development
+    container_name: royaltaxi-app
+    restart: unless-stopped
+    env_file: .env
     environment:
-      DATABASE_URL: postgresql://royaltaxi_user:royaltaxi_password@db:5432/royaltaxi
-      REDIS_URL: redis://redis:6379
-      FIREBASE_CREDENTIALS_PATH: /app/firebase-credentials.json
-    ports:
-      - "8000:8000"
+      - DATABASE_URL=postgresql://royaltaxi:royaltaxi123@db:5432/royaltaxi
+      - PYTHONUNBUFFERED=1
     volumes:
-      - ./firebase-credentials.json:/app/firebase-credentials.json:ro
-      - ./uploads:/app/uploads
+      - .:/app
+    ports:
+      - "8080:8080"
     depends_on:
       db:
         condition: service_healthy
       redis:
         condition: service_healthy
+    networks:
+      - royaltaxi-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  db:
+    image: postgres:15-alpine
+    container_name: royaltaxi-db
     restart: unless-stopped
-
-  # Celery worker for background tasks
-  celery-worker:
-    build: .
-    command: celery -A main.celery_app worker --loglevel=info
     environment:
-      DATABASE_URL: postgresql://royaltaxi_user:royaltaxi_password@db:5432/royaltaxi
-      REDIS_URL: redis://redis:6379
+      POSTGRES_USER: royaltaxi
+      POSTGRES_PASSWORD: royaltaxi123
+      POSTGRES_DB: royaltaxi
     volumes:
-      - ./uploads:/app/uploads
-    depends_on:
-      - db
-      - redis
-      - app
-
-  # Celery beat for scheduled tasks
-  celery-beat:
-    build: .
-    command: celery -A main.celery_app beat --loglevel=info --schedule=/tmp/celerybeat-schedule
-    environment:
-      DATABASE_URL: postgresql://royaltaxi_user:royaltaxi_password@db:5432/royaltaxi
-      REDIS_URL: redis://redis:6379
-    depends_on:
-      - db
-      - redis
-      - app
-
-  # Flower for Celery monitoring
-  flower:
-    build: .
-    command: celery -A main.celery_app flower --loglevel=info --port=8050
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db:/docker-entrypoint-initdb.d/
     ports:
-      - "8050:8050"
-    environment:
-      DATABASE_URL: postgresql://royaltaxi_user:royaltaxi_password@db:5432/royaltaxi
-      REDIS_URL: redis://redis:6379
-    depends_on:
-      - redis
-      - celery-worker
+      - "5433:5432"  # ⚠️ Tashqi portni 5433 qildik
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U royaltaxi -d royaltaxi"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - royaltaxi-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: royaltaxi-redis
+    restart: unless-stopped
+    command: ["redis-server", "--requirepass", "your_redis_password"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "your_redis_password", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - royaltaxi-network
+
+networks:
+  royaltaxi-network:
+    driver: bridge
 
 volumes:
   postgres_data:
