@@ -67,7 +67,7 @@ services:
   # Celery beat for scheduled tasks
   celery-beat:
     build: .
-    command: celery -A main.celery_app beat --loglevel=info
+    command: celery -A main.celery_app beat --loglevel=info --schedule=/tmp/celerybeat-schedule
     environment:
       DATABASE_URL: postgresql://royaltaxi_user:royaltaxi_password@db:5432/royaltaxi
       REDIS_URL: redis://redis:6379
@@ -79,7 +79,7 @@ services:
   # Flower for Celery monitoring
   flower:
     build: .
-    command: python -m flower -A main.celery_app --port=8050 --broker=redis://redis:6379/0
+    command: /usr/local/bin/flower --app=main.celery_app --address=0.0.0.0 --port=8050 --broker=redis://redis:6379/0
     ports:
       - "8050:8050"
     environment:
