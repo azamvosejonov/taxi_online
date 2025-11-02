@@ -200,17 +200,184 @@ def setup_swagger_ui(app: FastAPI):
             "required": ["phone", "password"]
         }
         
+        openapi_schema["components"]["schemas"]["DispatchOrderCreate"] = {
+            "type": "object",
+            "properties": {
+                "customer_phone": {
+                    "type": "string",
+                    "description": "Customer phone number (+998XXXXXXXXX)",
+                    "example": "+998901234567",
+                    "pattern": r"^\+998\d{9}$"
+                },
+                "customer_name": {
+                    "type": "string", 
+                    "description": "Customer name (optional)",
+                    "example": "Ali Valiyev"
+                },
+                "pickup_location": {
+                    "$ref": "#/components/schemas/Location"
+                },
+                "dropoff_location": {
+                    "$ref": "#/components/schemas/Location"
+                },
+                "vehicle_type": {
+                    "type": "string",
+                    "enum": ["ECONOMY", "COMFORT", "BUSINESS"],
+                    "default": "ECONOMY",
+                    "description": "Vehicle type",
+                    "example": "ECONOMY"
+                }
+            },
+            "required": ["pickup_location", "dropoff_location"]
+        }
+        
+        openapi_schema["components"]["schemas"]["Location"] = {
+            "type": "object",
+            "properties": {
+                "lat": {
+                    "type": "number",
+                    "format": "float",
+                    "minimum": -90,
+                    "maximum": 90,
+                    "description": "Latitude",
+                    "example": 41.2995
+                },
+                "lng": {
+                    "type": "number", 
+                    "format": "float",
+                    "minimum": -180,
+                    "maximum": 180,
+                    "description": "Longitude",
+                    "example": 69.2401
+                },
+                "address": {
+                    "type": "string",
+                    "description": "Address string",
+                    "example": "Toshkent shahar, Amir Temur kochasi"
+                },
+                "city": {
+                    "type": "string",
+                    "description": "City/Region name (optional)",
+                    "example": "Toshkent"
+                }
+            },
+            "required": ["lat", "lng", "address"]
+        }
+        
+        openapi_schema["components"]["schemas"]["DriverStatusUpdate"] = {
+            "type": "object",
+            "properties": {
+                "is_on_duty": {
+                    "type": "boolean",
+                    "description": "Whether driver is on duty",
+                    "example": True
+                },
+                "lat": {
+                    "type": "number",
+                    "format": "float",
+                    "minimum": -90,
+                    "maximum": 90,
+                    "description": "Current latitude (optional)",
+                    "example": 41.2995
+                },
+                "lng": {
+                    "type": "number",
+                    "format": "float", 
+                    "minimum": -180,
+                    "maximum": 180,
+                    "description": "Current longitude (optional)",
+                    "example": 69.2401
+                },
+                "city": {
+                    "type": "string",
+                    "description": "Current city (optional)",
+                    "example": "Toshkent"
+                }
+            },
+            "required": ["is_on_duty"]
+        }
+        
         openapi_schema["components"]["schemas"]["UserRegister"] = {
             "type": "object",
             "properties": {
-                "phone": {"type": "string", "description": "Uzbekistan phone number format (+998XXXXXXXXX)", "example": "+998901234567"},
-                "first_name": {"type": "string", "description": "First name", "example": "Falonchi"},
-                "last_name": {"type": "string", "description": "Last name", "example": "Falonchiyev"},
-                "gender": {"type": "string", "description": "Gender (optional)", "example": "Erkak"},
-                "date_of_birth": {"type": "string", "format": "date", "description": "Date of birth (YYYY-MM-DD, optional)", "example": "1990-01-01"},
-                "password": {"type": "string", "format": "password", "description": "Password (minimum 6 characters)", "example": "strongpassword123"}
+                "phone": {
+                    "type": "string", 
+                    "description": "O'zbekiston telefon raqami formati (+998XXXXXXXXX)", 
+                    "example": "+998901234567",
+                    "pattern": r"^\+998\d{9}$"
+                },
+                "first_name": {
+                    "type": "string", 
+                    "description": "Foydalanuvchi ismi", 
+                    "example": "Falonchi",
+                    "minLength": 2,
+                    "maxLength": 50
+                },
+                "last_name": {
+                    "type": "string", 
+                    "description": "Foydalanuvchi familiyasi", 
+                    "example": "Falonchiyev",
+                    "minLength": 2,
+                    "maxLength": 50
+                },
+                "password": {
+                    "type": "string", 
+                    "format": "password", 
+                    "description": "Parol (kamida 6 ta belgi)", 
+                    "example": "strongpassword123",
+                    "minLength": 6,
+                    "maxLength": 100
+                },
+                "gender": {
+                    "type": "string", 
+                    "description": "Jinsi (Erkak/Ayol)", 
+                    "example": "Erkak"
+                },
+                "date_of_birth": {
+                    "type": "string", 
+                    "format": "date", 
+                    "description": "Tug'ilgan sana (YYYY-MM-DD)", 
+                    "example": "1990-01-01"
+                },
+                "vehicle_make": {
+                    "type": "string", 
+                    "description": "Avtomobil markasi", 
+                    "example": "Chevrolet"
+                },
+                "vehicle_color": {
+                    "type": "string", 
+                    "description": "Avtomobil rangi", 
+                    "example": "Qora"
+                },
+                "position": {
+                    "type": "string", 
+                    "description": "Pozitsiya", 
+                    "example": "Haydovchi"
+                },
+                "license_plate": {
+                    "type": "string", 
+                    "description": "Davlat raqami", 
+                    "example": "01A123AA"
+                },
+                "tech_passport": {
+                    "type": "string", 
+                    "description": "Texpassport raqami", 
+                    "example": "AA1234567"
+                }
             },
-            "required": ["phone", "first_name", "last_name", "password"]
+            "required": [
+                "phone", 
+                "first_name", 
+                "last_name", 
+                "password", 
+                "gender", 
+                "date_of_birth",
+                "vehicle_make",
+                "vehicle_color", 
+                "position",
+                "license_plate",
+                "tech_passport"
+            ]
         }
         
         app.openapi_schema = openapi_schema
