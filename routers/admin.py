@@ -34,6 +34,18 @@ async def get_all_users(
         )
 
     users = db.query(User).all()
+    # Convert None boolean values to False for each user
+    for user in users:
+        if user.is_admin is None:
+            user.is_admin = False
+        if user.is_dispatcher is None:
+            user.is_dispatcher = False
+        if user.is_driver is None:
+            user.is_driver = False
+        if user.is_active is None:
+            user.is_active = True
+        if user.is_approved is None:
+            user.is_approved = False
     return users
 
 
@@ -231,6 +243,87 @@ async def unapprove_user(
     return {"message": "User unapproved", "user_id": user.id}
 
     return {"message": "User deactivated successfully"}
+
+
+@router.put("/users/{user_id}/set-dispatcher")
+async def set_user_as_dispatcher(
+    user_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Set user as dispatcher (admin only)"""
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required"
+        )
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+
+    user.is_dispatcher = True
+    user.is_admin = False  # Remove admin role if they were admin
+    db.commit()
+
+    return {"message": "User set as dispatcher", "user_id": user.id}
+
+
+@router.put("/users/{user_id}/set-admin")
+async def set_user_as_admin(
+    user_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Set user as admin (admin only)"""
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required"
+        )
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+
+    user.is_admin = True
+    user.is_dispatcher = False  # Remove dispatcher role if they were dispatcher
+    db.commit()
+
+    return {"message": "User set as admin", "user_id": user.id}
+
+
+@router.put("/users/{user_id}/remove-roles")
+async def remove_user_roles(
+    user_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Remove dispatcher/admin roles from user (admin only)"""
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required"
+        )
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+
+    user.is_dispatcher = False
+    user.is_admin = False
+    db.commit()
+
+    return {"message": "User roles removed", "user_id": user.id}
 
 
 @router.put("/users/{user_id}/activate")

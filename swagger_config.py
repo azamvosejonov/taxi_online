@@ -42,6 +42,43 @@ def setup_swagger_ui(app: FastAPI):
             }
         }
         
+        # Ensure registration endpoint is properly documented
+        if "/api/v1/auth/register" in openapi_schema["paths"]:
+            openapi_schema["paths"]["/api/v1/auth/register"]["post"].update({
+                "tags": ["Authentication"],
+                "summary": "Register a new user",
+                "description": "Create a new user account with the provided details",
+                "responses": {
+                    "201": {
+                        "description": "User registered successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {"$ref": "#/components/schemas/Token"}
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request - phone number already exists"
+                    },
+                    "422": {
+                        "description": "Validation error",
+                        "content": {
+                            "application/json": {
+                                "schema": {"$ref": "#/components/schemas/HTTPValidationError"}
+                            }
+                        }
+                    }
+                },
+                "requestBody": {
+                    "required": True,
+                    "content": {
+                        "application/json": {
+                            "schema": {"$ref": "#/components/schemas/UserRegister"}
+                        }
+                    }
+                }
+            })
+        
         # Define open endpoints (no authentication required)
         open_endpoints = [
             "/auth/login",
@@ -119,7 +156,7 @@ def setup_swagger_ui(app: FastAPI):
                     "content": {
                         "application/json": {
                             "schema": {
-                                "$ref": "#/components/schemas/UserCreate"
+                                "$ref": "#/components/schemas/UserRegister"
                             }
                         }
                     }
@@ -157,11 +194,25 @@ def setup_swagger_ui(app: FastAPI):
         openapi_schema["components"]["schemas"]["UserLogin"] = {
             "type": "object",
             "properties": {
-                "username": {"type": "string", "description": "Email or phone number", "example": "user@example.com or +998901234567"},
+                "phone": {"type": "string", "description": "Uzbekistan phone number format (+998XXXXXXXXX)", "example": "+998901234567"},
                 "password": {"type": "string", "format": "password", "example": "yourpassword"}
             },
-            "required": ["username", "password"]
+            "required": ["phone", "password"]
         }
+        
+        openapi_schema["components"]["schemas"]["UserRegister"] = {
+            "type": "object",
+            "properties": {
+                "phone": {"type": "string", "description": "Uzbekistan phone number format (+998XXXXXXXXX)", "example": "+998901234567"},
+                "first_name": {"type": "string", "description": "First name", "example": "Falonchi"},
+                "last_name": {"type": "string", "description": "Last name", "example": "Falonchiyev"},
+                "gender": {"type": "string", "description": "Gender (optional)", "example": "Erkak"},
+                "date_of_birth": {"type": "string", "format": "date", "description": "Date of birth (YYYY-MM-DD, optional)", "example": "1990-01-01"},
+                "password": {"type": "string", "format": "password", "description": "Password (minimum 6 characters)", "example": "strongpassword123"}
+            },
+            "required": ["phone", "first_name", "last_name", "password"]
+        }
+        
         app.openapi_schema = openapi_schema
         return app.openapi_schema
     

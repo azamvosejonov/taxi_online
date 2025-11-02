@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Royal Taxi API - Swagger UI</title>
+    <link rel="stylesheet" type="text/css" href="https://unpkg.com/swagger-ui-dist@5.9.0/swagger-ui.css" />
+    <style>
+        html {
+            box-sizing: border-box;
+            overflow: -moz-scrollbars-vertical;
+            overflow-y: scroll;
+        }
+        *, *:before, *:after {
+            box-sizing: inherit;
+        }
+        body {
+            margin: 0;
+            background: #fafafa;
+        }
+        .swagger-ui .topbar {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+    </style>
+</head>
+<body>
+    <div id="swagger-ui"></div>
+    <script src="https://unpkg.com/swagger-ui-dist@5.9.0/swagger-ui-bundle.js"></script>
+    <script src="https://unpkg.com/swagger-ui-dist@5.9.0/swagger-ui-standalone-preset.js"></script>
+    <script>
+        window.onload = function() {
+            // Initialize Swagger UI with minimal configuration
+            const ui = SwaggerUIBundle({
+                url: "/openapi.json",
+                dom_id: '#swagger-ui',
+                deepLinking: true,
+                presets: [
+                    SwaggerUIBundle.presets.apis,
+                    SwaggerUIStandalonePreset
+                ],
+                plugins: [
+                    SwaggerUIBundle.plugins.DownloadUrl
+                ],
+                layout: "StandaloneLayout",
+                persistAuthorization: true,
+                // HAR BIR API SO'ROVIGA avtomatik Authorization header qo'shadi
+                requestInterceptor: (request) => {
+                    let token = localStorage.getItem('swagger_auth_token');
+
+                    if (token) {
+                        request.headers['Authorization'] = `Bearer ${token}`;
+                        console.log('🔐 AUTH HEADER ADDED:', request.url);
+                    }
+
+                    return request;
+                },
+                filter: true,
+                tryItOutEnabled: true,
+                syntaxHighlight: {
+                    theme: "monokai"
+                },
+                // Handle login/register responses automatically
+                responseInterceptor: (response) => {
+                    // Check if this is a login or register response
+                    const isAuthEndpoint = response.url.includes('/auth/login') || response.url.includes('/auth/register');
+
+                    if (isAuthEndpoint && (response.status === 200 || response.status === 201)) {
+                        console.log('🎯 AUTH ENDPOINT SUCCESS:', response.url);
+
+                        try {
+                            // Get response data - try multiple ways
+                            let data = null;
+
+                            if (response.data) {
+                                data = response.data;
+                                console.log('📦 Using response.data');
+                            } else if (response.obj) {
+                                data = response.obj;
+                                console.log('📦 Using response.obj');
+                            } else if (response.text && typeof response.text === 'string') {
+                                try {
+                                    data = JSON.parse(response.text);
+                                    console.log('📦 Parsed from response.text');
+                                } catch (e) {
+                                    console.warn('⚠️ Could not parse response.text as JSON');
+                                }
+                            }
+
+                            console.log('🔍 Response data keys:', data ? Object.keys(data) : 'NO DATA');
+
+                            // Extract token - try multiple field names
+                            const token = data?.access_token || data?.token || data?.accessToken || data?.authorization;
+
+                            if (token) {
+                                console.log('🔑 TOKEN FOUND! Length:', token.length);
+
+                                // Store token immediately
+                                localStorage.setItem('swagger_auth_token', token);
+                                console.log('💾 Token saved to localStorage');
+
+                                // IMMEDIATE AUTHORIZATION - no delay
+                                const authConfig = {
+                                    Bearer: {
+                                        name: 'Bearer',
+                                        schema: {
+                                            type: 'http',
+                                            scheme: 'bearer',
+                                            bearerFormat: 'JWT'
+                                        },
+                                        value: token
+                                    }
+                                };
+
+                                // Try immediate authorization
+                                if (window.ui && window.ui.authActions) {
+                                    try {
+                                        window.ui.authActions.authorize(authConfig);
+                                        console.log('⚡ IMMEDIATE authorization successful!');
+                                    } catch (immediateError) {
+                                        console.warn('⚠️ Immediate auth failed, will retry:', immediateError);
+                                    }
+                                }
+
+                                // Auto-authorize Swagger UI with full methods
+                                setTimeout(() => {
+                                    if (window.ui && window.ui.authActions) {
+                                        try {
+                                            const authConfig = {
+                                                Bearer: {
+                                                    name: 'Bearer',
+                                                    schema: {
+                                                        type: 'http',
+                                                        scheme: 'bearer',
+                                                        bearerFormat: 'JWT'
+                                                    },
+                                                    value: token
+                                                }
+                                            };
+
+                                            window.ui.authActions.authorize(authConfig);
+                                            console.log('✅ Swagger UI authorized successfully!');
+
+                                            // Also save to Swagger's internal storage
+                                            localStorage.setItem('authorized', JSON.stringify(authConfig));
+
+                                            // ADDITIONAL METHODS to ensure authorization works
+                                            try {
+                                                // Method 2: Set authorization directly in Swagger's state
+                                                if (window.ui.getState && window.ui.getState().toJS) {
+                                                    const currentState = window.ui.getState().toJS();
+                                                    if (currentState && currentState.authorized) {
+                                                        currentState.authorized.Bearer = authConfig.Bearer;
+                                                        console.log('✅ State updated directly');
+                                                    }
+                                                }
+
+                                                // Method 3: Force UI refresh
+                                                if (window.ui.authActions && window.ui.authActions.showDefinitions) {
+                                                    setTimeout(() => {
+                                                        try {
+                                                            window.ui.authActions.showDefinitions();
+                                                        } catch (e) {
+                                                            // Ignore refresh errors
+                                                        }
+                                                    }, 100);
+                                                }
+
+                                            // IMMEDIATELY ACTIVATE GLOBAL FETCH OVERRIDE
+                                            if (window.originalFetch) {
+                                                // Already overridden, just ensure it's working
+                                                console.log('✅ Global fetch override already active');
+                                            } else {
+                                                // Activate it now
+                                                window.originalFetch = window.fetch;
+                                                window.fetch = function(url, options = {}) {
+                                                    const token = localStorage.getItem('swagger_auth_token');
+                                                    if (token && url.includes('/api/v1/') && !url.includes('/auth/login') && !url.includes('/auth/register')) {
+                                                        options.headers = options.headers || {};
+                                                        options.headers['Authorization'] = `Bearer ${token}`;
+                                                        console.log('🚀 LOGIN-ACTIVATED: Auth header added to', url);
+                                                    }
+                                                    return window.originalFetch.call(this, url, options);
+                                                };
+                                                console.log('✅ Global fetch override activated on login');
+                                            }
+
+                                            } catch (extraError) {
+                                                console.warn('⚠️ Extra authorization methods failed:', extraError);
+                                            }
+
+                                            // Show success message
+                                            alert('✅ LOGIN/REGISTER MUVAFFAQIYATLI!\n\nEndi barcha API larni ishlatishingiz mumkin. "Authorize" tugmasini bosish shart emas!');
+
+                                        } catch (authError) {
+                                            console.error('❌ Authorization failed:', authError);
+                                            alert('⚠️ Avtorizatsiya xatoligi yuz berdi. Sahifani yangilang va qayta login qiling.');
+                                        }
+                                    } else {
+                                        console.warn('⚠️ ui.authActions not available yet');
+                                    }
+                                }, 300); // Small delay for full authorization
+
+                            } else {
+                                console.error('❌ NO TOKEN FOUND in response!');
+                                console.log('Available fields:', data ? Object.keys(data) : 'NO DATA');
+                            }
+
+                        } catch (error) {
+                            console.error('❌ Token extraction failed:', error);
+                            alert('⚠️ Token olishda xatolik yuz berdi.');
+                        }
+                    }
+
+                    return response;
+                },
+                onComplete: function() {
+                    console.log('🚕 Royal Taxi API - Swagger UI yuklandi!');
+                    console.log('📋 Barcha API endpointlar ko\'rinishi kerak');
+
+                    // Check for stored token on page load
+                    const storedToken = localStorage.getItem('swagger_auth_token');
+                    if (storedToken && window.ui && window.ui.authActions) {
+                        console.log('🔄 Saqlangan token topildi, avtorizatsiya qilinmoqda...');
+                        const authConfig = {
+                            Bearer: {
+                                name: 'Bearer',
+                                schema: {
+                                    type: 'http',
+                                    scheme: 'bearer',
+                                    bearerFormat: 'JWT'
+                                },
+                                value: storedToken
+                            }
+                        };
+                        window.ui.authActions.authorize(authConfig);
+                        console.log('✅ Avtorizatsiya tiklandi!');
+                    }
+                }
+            });
+            
+            // Override the global fetch function to add authorization to ALL requests
+            const originalFetch = window.fetch;
+            window.fetch = function(url, options = {}) {
+                const token = localStorage.getItem('swagger_auth_token');
+
+                if (token && url.includes('/api/v1/') && !url.includes('/auth/login') && !url.includes('/auth/register')) {
+                    options.headers = options.headers || {};
+                    options.headers['Authorization'] = `Bearer ${token}`;
+                    console.log('🔥 GLOBAL FETCH OVERRIDE: Auth header added to', url);
+                }
+
+                return originalFetch.call(this, url, options);
+            };
+
+            console.log('✅ Global fetch override activated for automatic authorization');
+            window.debugAPITest = async function() {
+                const token = localStorage.getItem('swagger_auth_token');
+                console.log('🔍 DEBUG API TEST STARTED');
+                console.log('Token in localStorage:', token ? 'YES' : 'NO');
+
+                if (!token) {
+                    alert('❌ Token yo\'q! Avval login qiling.');
+                    return;
+                }
+
+                console.log('Token value:', token.substring(0, 50) + '...');
+
+                try {
+                    console.log('🌐 Making API call to /api/v1/users/balance (using global fetch override)...');
+
+                    const response = await fetch('/api/v1/users/balance', {
+                        method: 'GET',
+                        headers: {
+                            'Content-Type': 'application/json'
+                            // Authorization header will be added automatically by global fetch override
+                        }
+                    });
+
+                    console.log('📡 Response status:', response.status);
+                    console.log('📡 Response headers:', [...response.headers.entries()]);
+
+                    if (response.ok) {
+                        const data = await response.json();
+                        console.log('✅ API call SUCCESS:', data);
+                        alert('✅ API ishlaydi! Status: ' + response.status);
+                    } else {
+                        const errorText = await response.text();
+                        console.error('❌ API call FAILED:', response.status, errorText);
+                        alert(`❌ API ishlamaydi! Status: ${response.status}\nError: ${errorText}`);
+                    }
+                } catch (error) {
+                    console.error('❌ Network error:', error);
+                    alert('❌ Network xatoligi: ' + error.message);
+                }
+
+                console.log('🔍 DEBUG API TEST COMPLETED');
+            };
+
+            // Function to manually add token to all future requests
+            window.forceTokenAuth = function() {
+                const token = localStorage.getItem('swagger_auth_token');
+                if (!token) {
+                    alert('❌ Token topilmadi!');
+                    return;
+                }
+
+                // Override the request interceptor
+                window.ui.requestInterceptor = (request) => {
+                    request.headers = request.headers || {};
+                    delete request.headers['Authorization'];
+                    request.headers['Authorization'] = `Bearer ${token}`;
+                    console.log('🔥 FORCE AUTH HEADER ADDED');
+                    return request;
+                };
+
+                alert('✅ Force token auth applied! Endi barcha API so\'rovlariga token qo\'shiladi.');
+            };
+            
+            console.log('🚕 Royal Taxi API - Simple Swagger UI with Auto-Auth');
+            console.log('🔗 OpenAPI URL: /openapi.json');
+            console.log('🔐 Login/Register qilganda avtomatik avtorizatsiya bo\'ladi');
+            console.log('🔍 debugAPITest() - To\'liq API test qilish');
+            console.log('🔥 forceTokenAuth() - Majburiy token qo\'shish');
+            console.log('🛠️ Agar 401 bo\'lsa: debugAPITest() chaqiring');
+        };
+    </script>
+</body>
+</html>

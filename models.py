@@ -1,52 +1,61 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Float, Text, ForeignKey
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Float, Text, ForeignKey, Date, JSON
 from sqlalchemy.orm import relationship
 from datetime import datetime
-
 from database import Base
+
+class TimestampMixin(object):
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
 class User(Base):
     __tablename__ = "users"
-    
     id = Column(Integer, primary_key=True, index=True)
-    email = Column(String, unique=True, index=True, nullable=True)  # Optional for drivers/dispatchers
-    phone = Column(String, unique=True, index=True, nullable=False)  # Required for all users
-    password = Column(String, nullable=False)  # Required for all users
-    full_name = Column(String, nullable=False)  # Required for all users
-    profile_photo = Column(String, nullable=True)  # URL or file path
-    
-    # Role flags - only driver, dispatcher, and admin roles are kept
-    is_driver = Column(Boolean, default=False)      # Taxi driver
-    is_dispatcher = Column(Boolean, default=False)  # Dispatcher role
-    is_admin = Column(Boolean, default=False)       # Administrator role
-    
-    is_active = Column(Boolean, default=True)       # Account status
-    language = Column(String, default="uz")         # uz, ru, en
-    emergency_contact = Column(String, nullable=True)  # Emergency contact phone
+    phone = Column(String, unique=True, index=True, nullable=False)
+    hashed_password = Column(String, nullable=False)
+    first_name = Column(String, nullable=False)  # Ism
+    last_name = Column(String, nullable=False)   # Familiya
+    full_name = Column(String, nullable=False)   # To'liq ism
+    gender = Column(String, nullable=True)       # Jinsi
+    date_of_birth = Column(DateTime, nullable=True)  # Tug'ilgan sana
+    vehicle_make = Column(String, nullable=True)  # Avtomobil markasi
+    vehicle_color = Column(String, nullable=True) # Avtomobil rangi
+    position = Column(String, nullable=True)      # Pozitsiya
+    license_plate = Column(String, nullable=True, unique=True)  # Davlat raqami
+    tech_passport = Column(String, nullable=True, unique=True)  # Texpassport
+    # System fields
+    is_active = Column(Boolean, default=True)
+    is_driver = Column(Boolean, default=True)  # All users are drivers by default
+    is_dispatcher = Column(Boolean, default=False)  # Only set by admins
+    is_admin = Column(Boolean, default=False)  # Only set by admins
+    is_approved = Column(Boolean, default=False)
+    approved_by = Column(Integer, ForeignKey('users.id'), nullable=True)  # Admin who approved this user
+    current_balance = Column(Float, default=0.0)  # Current wallet balance
+    required_deposit = Column(Float, default=0.0)  # Required deposit for drivers
+    rating = Column(Float, default=5.0)  # User rating
+    total_rides = Column(Integer, default=0)  # Total number of rides
     created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
-    # Driver-specific fields
-    vehicle_type = Column(String, nullable=True)  # e.g., "sedan", "suv"
-    vehicle_number = Column(String, nullable=True)
-    license_number = Column(String, nullable=True)
-    vehicle_model = Column(String, nullable=True)
-    vehicle_color = Column(String, nullable=True)
-    rating = Column(Float, default=5.0)
-    total_rides = Column(Integer, default=0)
-    
-    # Driver balance system
-    current_balance = Column(Float, default=0.0)  # Current balance in som
-    required_deposit = Column(Float, default=0.0)  # Required deposit amount
-    is_approved = Column(Boolean, default=False)  # Approved by dispatcher
-    approved_by = Column(Integer, ForeignKey("users.id"), nullable=True)  # Admin who approved
-    approved_at = Column(DateTime, nullable=True)
-    current_location = Column(Text, nullable=True)  # JSON: {"lat": float, "lng": float} - for drivers only
-    city = Column(String, nullable=True)  # Driver's city/region for location-based filtering
-    
+    # Method to complete driver registration
+    def complete_driver_registration(self, 
+                                   vehicle_make: str, 
+                                   vehicle_color: str, 
+                                   position: str, 
+                                   license_plate: str, 
+                                   tech_passport: str):
+        self.vehicle_make = vehicle_make
+        self.vehicle_color = vehicle_color
+        self.position = position
+        self.license_plate = license_plate
+        self.tech_passport = tech_passport
+        self.is_driver = True
+        self.updated_at = datetime.utcnow()
+        
     # Relationships
     rides_as_rider = relationship("Ride", back_populates="rider", foreign_keys="Ride.rider_id")
     rides_as_driver = relationship("Ride", back_populates="driver", foreign_keys="Ride.driver_id")
     transactions = relationship("Transaction", back_populates="user")
-    approved_admin = relationship("User", remote_side="User.id")
+    approved_admin = relationship("User", remote_side=[id], foreign_keys=[approved_by])
     notifications = relationship("Notification", back_populates="user")
     fcm_tokens = relationship("FCMToken", back_populates="user")
     promo_codes = relationship("PromoCode", back_populates="creator")

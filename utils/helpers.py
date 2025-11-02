@@ -7,11 +7,13 @@ import string
 import math
 import os
 import requests
+import aiofiles
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional, Tuple, BinaryIO
+from pathlib import Path
 from jose import jwt
 from passlib.context import CryptContext
-from fastapi import UploadFile, HTTPException, Path
+from fastapi import UploadFile, HTTPException
 from config import settings
 
 # Password hashing
@@ -185,8 +187,11 @@ def verify_token(token: str) -> Optional[Dict[str, Any]]:
 
 async def save_upload_file(upload_file: UploadFile, folder: str = "general") -> str:
     """Save uploaded file and return file path"""
-    # Create folder if it doesn't exist
-    upload_dir = Path(settings.upload_dir) / folder
+    # Use absolute path for uploads directory (directories should already exist from Dockerfile)
+    upload_base_dir = Path("/app/uploads")
+    upload_dir = upload_base_dir / folder
+
+    # Ensure directory exists (should already exist, but just in case)
     upload_dir.mkdir(parents=True, exist_ok=True)
 
     # Generate unique filename
@@ -219,7 +224,7 @@ async def save_upload_file(upload_file: UploadFile, folder: str = "general") -> 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to save file: {str(e)}")
 
-    return f"/{settings.upload_dir}/{folder}/{unique_filename}"
+    return f"/uploads/{folder}/{unique_filename}"
 
 
 def paginate_query(query, page: int = 1, size: int = 20):

@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Royal Taxi API - Swagger UI</title>
+    <link rel="stylesheet" type="text/css" href="https://unpkg.com/swagger-ui-dist@5.9.0/swagger-ui.css" />
+    <style>
+        html {
+            box-sizing: border-box;
+            overflow: -moz-scrollbars-vertical;
+            overflow-y: scroll;
+        }
+        *, *:before, *:after {
+            box-sizing: inherit;
+        }
+        body {
+            margin:0;
+            padding:0;
+        }
+        .swagger-ui .topbar {
+            background-color: #1e3a8a;
+        }
+        #auth-banner {
+            background: #10b981;
+            color: white;
+            padding: 15px;
+            text-align: center;
+            font-weight: bold;
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 9999;
+            animation: slideDown 0.3s ease-out;
+        }
+        #logout-banner {
+            background: #ef4444;
+            color: white;
+            padding: 15px;
+            text-align: center;
+            font-weight: bold;
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 9999;
+            animation: slideDown 0.3s ease-out;
+        }
+        @keyframes slideDown {
+            from { transform: translateY(-100%); }
+            to { transform: translateY(0); }
+        }
+        #auth-status {
+            position: fixed;
+            top: 10px;
+            right: 20px;
+            z-index: 10000;
+            background: white;
+            border: 2px solid #1e3a8a;
+            border-radius: 8px;
+            padding: 10px 15px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        #logout-btn {
+            background: #ef4444;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 13px;
+            transition: background 0.2s;
+        }
+        #logout-btn:hover {
+            background: #dc2626;
+        #auth-indicator {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #10b981;
+                responseInterceptor: (response) => {
+                    // Check if this is a login or register response
+                    const isAuthEndpoint = response.url.includes('/auth/login') || response.url.includes('/auth/register');
+                    
+                    if (isAuthEndpoint && response.status === 200) {
+                        try {
+                            // swagger-ui provides parsed data on response.data
+                            let data = response && (response.data || response.obj);
+                            // Fallback: try to parse text if needed
+                            if (!data && response && typeof response.text === 'string' && response.text.trim().length > 0) {
+                                try { data = JSON.parse(response.text); } catch (e) { /* ignore */ }
+                            }
+                            
+                            if (data && (data.access_token || data.token || data.accessToken)) {
+                                const token = data.access_token || data.token || data.accessToken;
+                                
+                                // Store token in localStorage (will persist until logout)
+                                localStorage.setItem('swagger_auth_token', token);
+                                
+                                // Authorize Swagger UI with multiple methods
+                                setTimeout(() => {
+                                    // Use the centralized authorize function
+                                    if (window.authorizeSwagger) {
+                                        window.authorizeSwagger(token);
+                                    } else {
+                                        // Fallback if function not available yet
+                                        ui.preauthorizeApiKey('Bearer', token);
+                                        
+                                        if (ui.authActions) {
+                                            ui.authActions.authorize({
+                                                Bearer: {
+                                                    name: 'Bearer',
+                                                    schema: {
+                                                        type: 'http',
+                                                        scheme: 'bearer'
+                                                    },
+                                                    value: token
+                                                }
+                                            });
+                                        }
+                                        
+                                        // Set in Swagger's internal storage
+                                        const authorized = {
+                                            Bearer: {
+                                                name: 'Bearer',
+                                                schema: {
+                                                    type: 'http',
+                                                    scheme: 'bearer',
+                                                    in: 'header'
+                                                },
+                                                value: token
+                                            }
+                                        };
+                                        localStorage.setItem('authorized', JSON.stringify(authorized));
+                                    }
+                                }, 500);
+                            }
+                        } catch (error) {
+                            console.warn('⚠️ Token extraction failed:', error);
+                        }
+                    }
+                    
+                    // Handle 401 errors with detailed debugging
+                    if (response.status === 401) {
+                        console.error('='.repeat(60));
+                        console.error('❌ 401 UNAUTHORIZED ERROR!');
+                        console.error('URL:', response.url);
+                        
+                        const storedToken = localStorage.getItem('swagger_auth_token');
+                        const swaggerAuth = localStorage.getItem('authorized');
+                        
+                        console.error('Token in localStorage:', storedToken ? 'YES ✅' : 'NO ❌');
+                        console.error('Swagger authorized:', swaggerAuth ? 'YES ✅' : 'NO ❌');
+                        
+                        if (!storedToken) {
+                            console.error('➡️ YECHIM: Login yoki Register qiling!');
+                        } else {
+                            console.error('➡️ Token BOR lekin 401 chiqdi!');
+                            console.error('   Token:', storedToken.substring(0, 30) + '...');
+                            console.error('   YECHIM: Sahifani yangilang yoki qayta login qiling');
+                        }
+                        
+                        console.error('='.repeat(60));
+                    }
+                    
+                    return response;
+                },
+{{ ... }}
+            if (storedToken) {
+                setTimeout(() => {
+                    authorizeSwagger(storedToken);
+                    console.log('✅ Avvalgi session qayta tiklandi');
+                }, 500);
+            } else {
+                console.log('ℹ️ Token yo\'q. Login yoki Register qiling.');
+            }
+
+            window.ui = ui;
+        };
+
+        // Make functions available globally
+        window.performLogout = performLogout;
+        // authorizeSwagger is attached in window.onload after it is defined
+        
+        // Helper functions for debugging
+        window.checkAuth = function() {
+            const token = localStorage.getItem('swagger_auth_token');
+            const swaggerAuth = localStorage.getItem('authorized');
+            
+            console.log('=' .repeat(60));
+            console.log('🔍 AUTH STATUS CHECK');
+            console.log('=' .repeat(60));
+            console.log('Token saved:', token ? 'YES ✅' : 'NO ❌');
+            if (token) {
+                console.log('Token:', token.substring(0, 50) + '...');
+                console.log('Token length:', token.length);
+            }
+            console.log('Swagger authorized:', swaggerAuth ? 'YES ✅' : 'NO ❌');
+            if (swaggerAuth) {
+                try {
+                    const auth = JSON.parse(swaggerAuth);
+                    console.log('Swagger auth data:', auth);
+                } catch(e) {
+                    console.log('Cannot parse swagger auth');
+                }
+            }
+            console.log('=' .repeat(60));
+        };
+        
+        window.forceAuth = function() {
+            const token = localStorage.getItem('swagger_auth_token');
+            if (!token) {
+                console.error('❌ Token yo\'q! Login qiling.');
+                return;
+            }
+            console.log('🔄 Forcing authorization...');
+            authorizeSwagger(token);
+            console.log('✅ Done! Endi endpoint ni sinab ko\'ring.');
+        };
+        
+        console.log('='.repeat(60));
+        console.log('🚕 Royal Taxi API - Swagger UI');
+        console.log('='.repeat(60));
+        console.log('📝 Qanday ishlaydi:');
+        console.log('1. Login yoki Register qiling');
+        console.log('2. Token avtomatik saqlanadi va Authorize qilinadi');
+        console.log('3. Sahifani yangilasangiz ham token saqlanadi');
+        console.log('4. Logout tugmasini bosing yoki performLogout() chaqiring');
+        console.log('='.repeat(60));
+        console.log('🛠️ Debug funksiyalari:');
+        console.log('   checkAuth()   - Auth statusni ko\'rish');
+        console.log('   forceAuth()   - Token ni qayta authorize qilish');
+        console.log('   performLogout() - Logout qilish');
+        console.log('='.repeat(60));
+    </script>
+</body>
+</html>

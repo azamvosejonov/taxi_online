@@ -13,6 +13,7 @@ from models import User, Ride, Transaction, Payment, SystemConfig, DriverStatus
 from schemas import DriverStatusUpdate, CompleteRideRequest
 from routers.auth import get_current_user
 from utils.helpers import calculate_distance
+from websocket import manager  # WebSocket manager import
 
 router = APIRouter(prefix="/driver", tags=["Driver"])
 
@@ -69,6 +70,44 @@ async def update_status(
         ds.city = payload.city
         current_user.city = payload.city
     db.commit()
+
+    # Broadcast location update to dispatchers via WebSocket
+    if payload.lat is not None and payload.lng is not None:
+        location_update = {
+            "type": "driver_location_update",
+            "driver_id": current_user.id,
+            "driver_name": current_user.full_name,
+            "location": {
+                "lat": payload.lat,
+                "lng": payload.lng,
+                "city": payload.city
+            },
+            "is_on_duty": payload.is_on_duty,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        # Broadcast to all dispatchers
+        await manager.broadcast(json.dumps(location_update), "dispatchers")
+
+        # Also broadcast to riders if driver has active rides
+        active_rides = db.query(Ride).filter(
+            Ride.driver_id == current_user.id,
+            Ride.status.in_(["accepted", "in_progress"])
+        ).all()
+
+        for ride in active_rides:
+            rider_update = {
+                "type": "driver_location_update",
+                "ride_id": ride.id,
+                "driver_location": {
+                    "lat": payload.lat,
+                    "lng": payload.lng,
+                    "city": payload.city
+                },
+                "driver_status": "on_duty" if payload.is_on_duty else "off_duty",
+                "timestamp": datetime.utcnow().isoformat()
+            }
+            await manager.broadcast(json.dumps(rider_update), "riders")
+
     return {"message": "Status updated", "is_on_duty": ds.is_on_duty}
 
 
@@ -109,6 +148,18 @@ async def start_ride(
 
     ride.status = "in_progress"
     db.commit()
+
+    # Notify rider via WebSocket
+    rider_update = {
+        "type": "ride_status_update",
+        "ride_id": ride_id,
+        "old_status": "accepted",
+        "new_status": "in_progress",
+        "message": "Haydovchi safarga chiqdi",
+        "timestamp": datetime.utcnow().isoformat()
+    }
+    await manager.broadcast(json.dumps(rider_update), "riders")
+
     return {"message": "Ride started"}
 
 
@@ -150,21 +201,20 @@ async def complete_ride(
         transaction_id=None,
     )
     db.add(pay)
-
-    # Deduct commission from driver's balance (deposit)
-    current_user.current_balance = float(current_user.current_balance or 0) - commission
-    tx = Transaction(
-        user_id=current_user.id,
-        amount=-commission,
-        transaction_type="commission",
-        description=f"Commission for ride {ride.id}",
-        ride_id=ride.id,
-    )
-    db.add(tx)
-
     db.commit()
 
     remaining = float(current_user.current_balance or 0)
+
+    # Notify rider via WebSocket
+    rider_update = {
+        "type": "ride_completed",
+        "ride_id": ride_id,
+        "final_fare": final_fare,
+        "message": f"Safar tugadi. Umumiy narx: {final_fare} UZS",
+        "timestamp": datetime.utcnow().isoformat()
+    }
+    await manager.broadcast(json.dumps(rider_update), "riders")
+
     return {
         "message": "Ride completed",
         "final_fare": final_fare,
@@ -172,8 +222,6 @@ async def complete_ride(
         "commission": commission,
         "remaining_deposit": remaining,
     }
-
-
 @router.get("/stats")
 async def driver_stats(
     current_user: User = Depends(get_current_user),

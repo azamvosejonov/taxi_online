@@ -3,25 +3,35 @@ Royal Taxi API - Main application file
 Clean, organized FastAPI application with proper structure
 """
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
+import logging
+import json
+from typing import Dict, List
+from datetime import datetime
 from firebase_admin import credentials
 from celery import Celery
 from starlette.types import Lifespan
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 import os
 
 from config import settings
-from swagger_config import setup_swagger_ui
 from database import engine, Base
+
+from websocket import manager  # Import WebSocket manager
+from swagger_config import setup_swagger_ui  # Import Swagger setup
+
 from routers import (
     auth_router as auth,
     users_router as users,
     admin_router as admin,
+    files_router as files,
 )
 from routers.dispatcher import router as dispatcher_router
 from routers.driver import router as driver_router
+from routers.rider import router as rider_router  # Rider tracking router
 
 # Import models for table creation
 from models import *  # noqa
@@ -105,8 +115,8 @@ if not getattr(settings, 'testing', False):
 # Custom Swagger UI endpoint with auto-token handling
 @app.get("/docs", include_in_schema=False)
 async def custom_swagger_ui():
-    """Custom Swagger UI with automatic token authorization"""
-    html_path = os.path.join(os.path.dirname(__file__), "swagger_ui_custom.html")
+    """Simple Swagger UI that shows all APIs"""
+    html_path = os.path.join(os.path.dirname(__file__), "swagger_ui_simple.html")
     if os.path.exists(html_path):
         with open(html_path, "r", encoding="utf-8") as f:
             return HTMLResponse(content=f.read())
@@ -118,8 +128,10 @@ async def custom_swagger_ui():
 app.include_router(auth, prefix="/api/v1")
 app.include_router(users, prefix="/api/v1")
 app.include_router(admin, prefix="/api/v1")
+app.include_router(files, prefix="/api/v1")
 app.include_router(dispatcher_router, prefix="/api/v1")
 app.include_router(driver_router, prefix="/api/v1")
+app.include_router(rider_router, prefix="/api/v1")  # Rider tracking APIs
 
 @app.get("/", tags=["Health"])
 async def root():
@@ -138,8 +150,83 @@ async def health_check():
         "status": "healthy",
         "version": settings.api_version,
         "database": "connected",
-        "redis": "connected" if 'redis_client' in globals() and redis_client is not None else "disabled"
+        "redis": "connected" if 'redis_client' in globals() and redis_client is not None else "disabled",
+        "websocket": "enabled"
     }
+
+# WebSocket endpoints for real-time tracking
+@app.websocket("/ws/drivers/{driver_id}")
+async def driver_websocket_endpoint(websocket: WebSocket, driver_id: int):
+    """WebSocket endpoint for driver location updates"""
+    await manager.connect(websocket, "drivers")
+    try:
+        while True:
+            data = await websocket.receive_text()
+            # Parse location data and broadcast to dispatchers
+            try:
+                location_data = json.loads(data)
+                message = {
+                    "type": "driver_location",
+                    "driver_id": driver_id,
+                    "location": location_data,
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+                await manager.broadcast(json.dumps(message), "dispatchers")
+            except json.JSONDecodeError:
+                await websocket.send_text(json.dumps({"error": "Invalid JSON format"}))
+    except WebSocketDisconnect:
+        manager.disconnect(websocket, "drivers")
+
+@app.websocket("/ws/dispatchers/{dispatcher_id}")
+async def dispatcher_websocket_endpoint(websocket: WebSocket, dispatcher_id: int):
+    """WebSocket endpoint for dispatcher monitoring"""
+    await manager.connect(websocket, "dispatchers")
+    try:
+        while True:
+            data = await websocket.receive_text()
+            # Dispatcher can send commands to drivers
+            try:
+                command_data = json.loads(data)
+                if command_data.get("type") == "command":
+                    await manager.broadcast(json.dumps(command_data), "drivers")
+            except json.JSONDecodeError:
+                await websocket.send_text(json.dumps({"error": "Invalid JSON format"}))
+    except WebSocketDisconnect:
+        manager.disconnect(websocket, "dispatchers")
+
+@app.websocket("/ws/riders/{ride_id}")
+async def rider_websocket_endpoint(websocket: WebSocket, ride_id: int):
+    """WebSocket endpoint for rider ride tracking with real-time updates"""
+    await manager.connect(websocket, "riders")
+    try:
+        # Send initial ride status
+        initial_update = {
+            "type": "ride_update",
+            "ride_id": ride_id,
+            "message": "Connected to ride tracking",
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        await websocket.send_text(json.dumps(initial_update))
+
+        while True:
+            # Riders can send requests for updates, but mainly receive updates
+            data = await websocket.receive_text()
+            try:
+                request_data = json.loads(data)
+                if request_data.get("type") == "status_request":
+                    # Send current ride status
+                    status_update = {
+                        "type": "status_response",
+                        "ride_id": ride_id,
+                        "status": "connected",
+                        "message": "Real-time tracking active",
+                        "timestamp": datetime.utcnow().isoformat()
+                    }
+                    await websocket.send_text(json.dumps(status_update))
+            except json.JSONDecodeError:
+                await websocket.send_text(json.dumps({"error": "Invalid JSON format"}))
+    except WebSocketDisconnect:
+        manager.disconnect(websocket, "riders")
 
 if __name__ == "__main__":
     import uvicorn

@@ -3,6 +3,7 @@ Dispatcher router - Implements dispatcher-first order flow
 """
 from typing import List, Optional, Tuple
 import json
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -17,7 +18,10 @@ from routers.auth import get_current_user
 from utils.helpers import (
     calculate_distance, estimate_duration, calculate_fare
 )
+from services.map_service import MapService  # OSRM xizmatini qo'shish
 from config import settings
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/dispatcher", tags=["Dispatcher"])
 
@@ -106,12 +110,23 @@ async def create_order(
     # Ensure customer exists
     customer = _get_or_create_customer(db, order.customer_phone, order.customer_name)
 
-    # Calculate estimate
-    distance = calculate_distance(
-        order.pickup_location.lat, order.pickup_location.lng,
-        order.dropoff_location.lat, order.dropoff_location.lng
-    )
-    duration = estimate_duration(distance)
+    # Calculate estimate using OSRM for accurate routing
+    try:
+        route_data = await MapService.get_route(
+            order.pickup_location.lng, order.pickup_location.lat,
+            order.dropoff_location.lng, order.dropoff_location.lat
+        )
+        distance = route_data.get('distance', 0) / 1000  # Convert meters to km
+        duration = route_data.get('duration', 0) / 60    # Convert seconds to minutes
+    except Exception as e:
+        # Fallback to simple calculation if OSRM fails
+        logger.warning(f"OSRM failed, using fallback calculation: {str(e)}")
+        distance = calculate_distance(
+            order.pickup_location.lat, order.pickup_location.lng,
+            order.dropoff_location.lat, order.dropoff_location.lng
+        )
+        duration = estimate_duration(distance)
+    
     fare = calculate_fare(distance, duration, order.vehicle_type.value)
 
     # Create ride

@@ -31,11 +31,18 @@ COPY requirements.txt .
 RUN pip install --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
+# Create necessary directories with subdirectories
+RUN mkdir -p /app/uploads /app/uploads/profiles /app/uploads/driver_docs /app/uploads/general /app/logs /app/config
+
+# Copy only necessary files
 COPY . .
 
-# Create necessary directories
-RUN mkdir -p /app/uploads /app/logs
+# Create firebase credentials directory and copy the file
+RUN if [ -f firebase-credentials.json ]; then \
+      mkdir -p /app/config && \
+      cp firebase-credentials.json /app/config/firebase-credentials.json && \
+      chmod 600 /app/config/firebase-credentials.json; \
+    fi
 
 # Create non-root user and set permissions
 RUN groupadd -g 1001 appuser && \

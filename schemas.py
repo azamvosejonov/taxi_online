@@ -1,9 +1,9 @@
 """
 Pydantic schemas for request/response models
 """
+from datetime import date, datetime
 from typing import Dict, Any, Optional, List
 from pydantic import BaseModel, EmailStr, Field
-from datetime import datetime
 from enum import Enum
 
 # Enums
@@ -44,32 +44,130 @@ class TransactionType(str, Enum):
 class Language(str, Enum):
     UZBEK = "uz"
     RUSSIAN = "ru"
-    ENGLISH = "en"
 
 # Location schema
 class Location(BaseModel):
     lat: float = Field(..., ge=-90, le=90, description="Latitude")
     lng: float = Field(..., ge=-180, le=180, description="Longitude")
-    address: str = Field(..., min_length=1, description="Address string")
+    address: str = Field(..., min_length=1, max_length=100, description="Address string")
     city: Optional[str] = Field(None, description="City/Region name")
 
-# User schemas
-class UserBase(BaseModel):
-    email: EmailStr
-    phone: str = Field(..., pattern=r"^\+998\d{9}$", description="Uzbekistan phone number format")
-    full_name: str = Field(..., min_length=2, max_length=100)
-    language: Language = Language.UZBEK
+# First step of registration (basic info)
+class UserRegister(BaseModel):
+    """User registration request model"""
+    phone: str = Field(
+        ...,
+        example="+998901234567",
+        pattern=r"^\+998\d{9}$",
+        description="O'zbekiston telefon raqami formati (+998XXXXXXXXX)"
+    )
+    first_name: str = Field(
+        ...,
+        example="Falonchi",
+        min_length=2,
+        max_length=50,
+        description="Foydalanuvchi ismi"
+    )
+    last_name: str = Field(
+        ...,
+        example="Falonchiyev",
+        min_length=2,
+        max_length=50,
+        description="Foydalanuvchi familiyasi"
+    )
+    password: str = Field(
+        ...,
+        example="strongpassword123",
+        min_length=6,
+        max_length=100,
+        description="Parol (kamida 6 ta belgi)"
+    )
+    gender: str = Field(
+        ...,
+        example="Erkak",
+        description="Jinsi (Erkak/Ayol)"
+    )
+    date_of_birth: date = Field(
+        ...,
+        example="1990-01-01",
+        description="Tug'ilgan sana (YYYY-MM-DD)"
+    )
+    vehicle_make: str = Field(
+        ...,
+        example="Chevrolet",
+        description="Avtomobil markasi"
+    )
+    vehicle_color: str = Field(
+        ...,
+        example="Qora",
+        description="Avtomobil rangi"
+    )
+    position: str = Field(
+        ...,
+        example="Haydovchi",
+        description="Pozitsiya"
+    )
+    license_plate: str = Field(
+        ...,
+        example="01A123AA",
+        description="Davlat raqami"
+    )
+    tech_passport: str = Field(
+        ...,
+        example="AA1234567",
+        description="Texpassport raqami"
+    )
 
-class UserCreate(UserBase):
-    password: str = Field(..., min_length=8, max_length=128)
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "phone": "+998901234567",
+                "first_name": "Falonchi",
+                "last_name": "Falonchiyev",
+                "password": "strongpassword123",
+                "gender": "Erkak",
+                "date_of_birth": "1990-01-01",
+                "vehicle_make": "Chevrolet",
+                "vehicle_color": "Qora",
+                "position": "Haydovchi",
+                "license_plate": "01A123AA",
+                "tech_passport": "AA1234567"
+            }
+        }
+
+# Second step of registration (driver details)
+class DriverDetails(BaseModel):
+    vehicle_make: str = Field(..., description="Avtomobil markasi")
+    vehicle_color: str = Field(..., description="Avtomobil rangi")
+    position: str = Field(..., description="Pozitsiya")
+    license_plate: str = Field(..., description="Davlat raqami")
+    tech_passport: str = Field(..., description="Texpassport raqami")
+
+class UserBase(BaseModel):
+    phone: str = Field(..., pattern=r"^\+998\d{9}$", description="O'zbekiston telefon raqami formati")
+    first_name: str = Field(..., min_length=2, max_length=50, description="Ism")
+    last_name: str = Field(..., min_length=2, max_length=50, description="Familiya")
+    gender: Optional[str] = Field(None, description="Jinsi")
+    date_of_birth: Optional[date] = Field(None, description="Tug'ilgan sanasi (YYYY-MM-DD)")
+    language: Language = Language.UZBEK
+    
+    @property
+    def full_name(self) -> str:
+        return f"{self.first_name} {self.last_name}"
+    
     is_driver: bool = False
     is_admin: bool = False
     emergency_contact: Optional[str] = None
+    
+    # Driver-specific fields
     vehicle_type: Optional[VehicleType] = None
-    vehicle_number: Optional[str] = None
-    license_number: Optional[str] = None
-    vehicle_model: Optional[str] = None
-    vehicle_color: Optional[str] = None
+    vehicle_make: Optional[str] = Field(None, description="Avtomobil markasi")
+    vehicle_model: Optional[str] = Field(None, description="Avtomobil modeli")
+    vehicle_color: Optional[str] = Field(None, description="Avtomobil rangi")
+    license_plate: Optional[str] = Field(None, description="Davlat raqami")
+    tech_passport: Optional[str] = Field(None, description="Texpassport raqami")
+    license_number: Optional[str] = Field(None, description="Haydovchilik guvohnomasi raqami")
+    position: Optional[str] = Field(None, description="Pozitsiya")
 
 class UserUpdate(BaseModel):
     full_name: Optional[str] = Field(None, min_length=2, max_length=100)
@@ -80,31 +178,57 @@ class UserUpdate(BaseModel):
     vehicle_number: Optional[str] = None
     license_number: Optional[str] = None
     vehicle_model: Optional[str] = None
-    vehicle_color: Optional[str] = None
     profile_photo: Optional[str] = None
 
 class UserResponse(BaseModel):
     id: int
-    email: str
     phone: str
     full_name: str
+    gender: Optional[str]
+    date_of_birth: Optional[datetime]
     profile_photo: Optional[str] = None
     is_driver: bool
-    is_admin: bool
+    is_dispatcher: bool = False
+    is_admin: bool = False
     is_active: bool
-    language: str
-    emergency_contact: Optional[str]
-    rating: float
+    language: str = "uz"
+    emergency_contact: Optional[str] = None
+    vehicle_type: Optional[str] = None
+    vehicle_make: Optional[str]
+    vehicle_model: Optional[str] = None
+    vehicle_color: Optional[str]
+    license_plate: Optional[str]
+    tech_passport: Optional[str]
+    license_number: Optional[str] = None
+    position: Optional[str]
+    rating: Optional[float]
     total_rides: int
     current_balance: float
     required_deposit: float
     is_approved: bool
-    vehicle_type: Optional[str]
-    vehicle_number: Optional[str]
-    license_number: Optional[str]
-    vehicle_model: Optional[str]
-    vehicle_color: Optional[str]
+    approved_by: Optional[int]
+    approved_at: Optional[datetime] = None
+    current_location: Optional[Dict[str, float]] = None
+    city: Optional[str] = None
     created_at: datetime
+
+    class Config:
+        from_attributes = True
+        json_encoders = {
+            datetime: lambda v: v.isoformat() if v else None
+        }
+        
+    def __init__(self, **data):
+        # Handle legacy data where first_name and last_name might be provided
+        if 'full_name' not in data and 'first_name' in data and 'last_name' in data:
+            data['full_name'] = f"{data['first_name']} {data['last_name']}"
+        
+        # Convert None boolean values to False
+        for field in ['is_driver', 'is_dispatcher', 'is_admin', 'is_active', 'is_approved']:
+            if field in data and data[field] is None:
+                data[field] = False
+        
+        super().__init__(**data)
 
 # Ride schemas
 class RideCreate(BaseModel):
@@ -237,10 +361,24 @@ class AdminNotifyRequest(BaseModel):
     body: str
 
 # Authentication schemas
+class UserLogin(BaseModel):
+    """Schema for user login"""
+    phone: str = Field(..., pattern=r"^\+998\d{9}$", description="O'zbekiston telefon raqami formati")
+    password: str = Field(..., min_length=6, description="Parol (kamida 6 ta belgi)")
+
 class Token(BaseModel):
+    """Schema for JWT token response"""
     access_token: str
-    token_type: str
+    token_type: str = "bearer"
+    expires_in: int = 604800  # 7 days in seconds
+    user: Dict[str, Any]
+    token: str  # Alias for access_token for backward compatibility
+    accessToken: str  # Alias for access_token for mobile app compatibility
+    authorization: str  # Full Authorization header value
+    security: Dict[str, Dict[str, str]]  # For Swagger UI
+
 class TokenData(BaseModel):
+    """Schema for JWT token data"""
     email: Optional[str] = None
 
 # Analytics schemas
@@ -386,7 +524,7 @@ class CustomerResponse(CustomerBase):
 
 # Authentication schemas
 class UserLogin(BaseModel):
-    username: str  # Can be email or phone
+    phone: str = Field(..., pattern=r"^\+998\d{9}$", description="Uzbekistan phone number format")
     password: str
 
 class MonthlyAnalytics(BaseModel):
