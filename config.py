@@ -5,11 +5,12 @@ import os
 from typing import Optional
 
 # Database configuration
-DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./royaltaxi.db")
+# Default to instance directory to avoid mixing DB files in project root
+DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./instance/royaltaxi.db")
 TESTING: bool = os.getenv("TESTING", "false").lower() == "true"
 
 if TESTING:
-    DATABASE_URL = "sqlite:///./test_royaltaxi.db"
+    DATABASE_URL = "sqlite:///./instance/test_royaltaxi.db"
 
 # Security settings
 SECRET_KEY: str = os.getenv("SECRET_KEY", "your-secret-key-change-in-production")
@@ -23,7 +24,8 @@ REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379")
 FIREBASE_CREDENTIALS_PATH: str = os.getenv("FIREBASE_CREDENTIALS_PATH", "firebase-credentials.json")
 
 # File upload settings
-UPLOAD_DIR: str = "uploads"
+# Use instance/uploads by default to ensure write permissions in local/dev
+UPLOAD_DIR: str = "instance/uploads"
 MAX_FILE_SIZE: int = 10 * 1024 * 1024  # 10MB
 ALLOWED_EXTENSIONS: list = [".jpg", ".jpeg", ".png", ".gif"]
 
@@ -79,6 +81,12 @@ SUPPORTED_LANGUAGES: list = ["uz", "ru", "en"]
 DEFAULT_PAGE_SIZE: int = 20
 MAX_PAGE_SIZE: int = 100
 
+# Twilio SMS configuration
+TWILIO_ACCOUNT_SID: str = os.getenv("TWILIO_ACCOUNT_SID", "")
+TWILIO_AUTH_TOKEN: str = os.getenv("TWILIO_AUTH_TOKEN", "")
+TWILIO_PHONE_NUMBER: str = os.getenv("TWILIO_PHONE_NUMBER", "")
+TWILIO_ENABLED: bool = os.getenv("TWILIO_ENABLED", "false").lower() == "true"
+
 class Settings:
     """Application settings singleton"""
     def __init__(self):
@@ -104,6 +112,11 @@ class Settings:
         self.supported_languages: list = SUPPORTED_LANGUAGES
         self.default_page_size: int = DEFAULT_PAGE_SIZE
         self.max_page_size: int = MAX_PAGE_SIZE
+        # Twilio settings
+        self.twilio_account_sid: str = TWILIO_ACCOUNT_SID
+        self.twilio_auth_token: str = TWILIO_AUTH_TOKEN
+        self.twilio_phone_number: str = TWILIO_PHONE_NUMBER
+        self.twilio_enabled: bool = TWILIO_ENABLED
 
 # Global settings instance
 settings = Settings()

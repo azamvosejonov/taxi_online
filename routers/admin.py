@@ -6,13 +6,20 @@ from datetime import datetime, timedelta
 from typing import List
 
 from sqlalchemy import func, extract, and_
+import json
+from utils.helpers import calculate_distance
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from database import get_db
 from models import User, Ride, Payment, SystemConfig, Notification
-from schemas import UserResponse, SystemStats, DailyAnalytics, WeeklyAnalytics, MonthlyAnalytics, YearlyAnalytics, IncomeStats, AdminNotifyRequest
+from schemas import (
+    UserResponse, SystemStats, DailyAnalytics, WeeklyAnalytics, 
+    MonthlyAnalytics, YearlyAnalytics, IncomeStats, AdminNotifyRequest,
+    VehicleTypePrice, PricingConfigResponse
+)
 from routers.auth import get_current_user
+from config import settings
 
 router = APIRouter(
     prefix="/admin",
@@ -46,6 +53,15 @@ async def get_all_users(
             user.is_active = True
         if user.is_approved is None:
             user.is_approved = False
+        # Normalize current_location (string JSON -> dict) for response validation
+        try:
+            if isinstance(user.current_location, str) and user.current_location:
+                user.current_location = json.loads(user.current_location)
+        except Exception:
+            user.current_location = None
+        # Ensure created_at present (direct SQL inserts might leave it NULL)
+        if user.created_at is None:
+            user.created_at = datetime.utcnow()
     return users
 
 
@@ -103,6 +119,18 @@ async def get_daily_analytics(
     completed_rides = [r for r in daily_rides if r.status == "completed"]
     total_revenue = sum(r.fare for r in completed_rides if r.fare)
 
+    def _ride_distance(ride: Ride) -> float:
+        try:
+            p = json.loads(ride.pickup_location) if isinstance(ride.pickup_location, str) else ride.pickup_location
+            d = json.loads(ride.dropoff_location) if isinstance(ride.dropoff_location, str) else ride.dropoff_location
+            if p and d and all(k in p for k in ("lat", "lng")) and all(k in d for k in ("lat", "lng")):
+                return calculate_distance(float(p["lat"]), float(p["lng"]), float(d["lat"]), float(d["lng"]))
+        except Exception:
+            pass
+        return 0.0
+
+    distances = [_ride_distance(r) for r in completed_rides]
+
     # Daily user registrations
     daily_users = db.query(User).filter(
         func.date(User.created_at) == date
@@ -122,7 +150,7 @@ async def get_daily_analytics(
         "total_revenue": total_revenue,
         "new_users": daily_users,
         "driver_approvals": daily_approvals,
-        "average_ride_distance": sum(r.distance for r in completed_rides) / len(completed_rides) if completed_rides else 0,
+        "average_ride_distance": (sum(distances) / len(distances)) if distances else 0,
         "average_ride_fare": total_revenue / len(completed_rides) if completed_rides else 0
     }
 
@@ -702,3 +730,163 @@ async def notify_driver(
     db.add(Notification(user_id=driver.id, title=payload.title, body=payload.body, notification_type="promo"))
     db.commit()
     return {"message": "Notification sent"}
+
+
+# --- Pricing Management ---
+@router.get("/pricing", response_model=PricingConfigResponse)
+async def get_pricing_config(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Hozirgi narx sozlamalarini ko'rish (Admin only)
+    
+    Barcha mashina turlari uchun narxlarni qaytaradi:
+    - Economy (Oddiy)
+    - Comfort (Qulay)
+    - Business (Biznes)
+    """
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin huquqi kerak")
+    
+    # Get commission rate from database
+    commission_cfg = db.query(SystemConfig).filter(SystemConfig.key == "commission_rate").first()
+    commission_rate = float(commission_cfg.value) if commission_cfg else settings.commission_rate
+    
+    return {
+        "economy": settings.vehicle_types["economy"],
+        "comfort": settings.vehicle_types["comfort"],
+        "business": settings.vehicle_types["business"],
+        "commission_rate": commission_rate
+    }
+
+
+@router.put("/pricing/{vehicle_type}")
+async def update_vehicle_pricing(
+    vehicle_type: str,
+    pricing: VehicleTypePrice,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Mashina turi narxlarini yangilash (Admin only)
+    
+    Parametrlar:
+    - vehicle_type: economy, comfort, yoki business
+    - base_fare: Boshlang'ich narx (so'm)
+    - per_km_rate: Har km uchun narx (so'm)
+    - per_minute_rate: Har daqiqa uchun narx (so'm)
+    
+    Misol:
+    - Economy: base=10000, km=2000, min=500
+    - Comfort: base=15000, km=3000, min=750
+    - Business: base=25000, km=5000, min=1000
+    """
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin huquqi kerak")
+    
+    # Validate vehicle type
+    if vehicle_type not in ["economy", "comfort", "business"]:
+        raise HTTPException(
+            status_code=400, 
+            detail="Noto'g'ri mashina turi. Faqat: economy, comfort, business"
+        )
+    
+    # Save to database
+    config_key = f"pricing_{vehicle_type}"
+    config_value = {
+        "base_fare": pricing.base_fare,
+        "per_km_rate": pricing.per_km_rate,
+        "per_minute_rate": pricing.per_minute_rate
+    }
+    
+    import json
+    cfg = db.query(SystemConfig).filter(SystemConfig.key == config_key).first()
+    if not cfg:
+        cfg = SystemConfig(key=config_key, value=json.dumps(config_value))
+        db.add(cfg)
+    else:
+        cfg.value = json.dumps(config_value)
+    
+    db.commit()
+    
+    # Update in-memory settings (for current session)
+    settings.vehicle_types[vehicle_type]["base_fare"] = pricing.base_fare
+    settings.vehicle_types[vehicle_type]["per_km_rate"] = pricing.per_km_rate
+    settings.vehicle_types[vehicle_type]["per_minute_rate"] = pricing.per_minute_rate
+    
+    return {
+        "message": f"{vehicle_type.capitalize()} narxlari yangilandi",
+        "vehicle_type": vehicle_type,
+        "pricing": config_value
+    }
+
+
+@router.get("/pricing/calculate")
+async def calculate_fare_preview(
+    distance: float,
+    duration: int,
+    vehicle_type: str = "economy",
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Narxni hisoblash (Preview) - Admin only
+    
+    Parametrlar:
+    - distance: Masofa (km)
+    - duration: Vaqt (daqiqa)
+    - vehicle_type: economy, comfort, yoki business
+    
+    Misol:
+    - distance=10, duration=20, vehicle_type=economy
+    - Natija: 10,000 + (10×2,000) + (20×500) = 40,000 so'm
+    """
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin huquqi kerak")
+    
+    if vehicle_type not in ["economy", "comfort", "business"]:
+        raise HTTPException(
+            status_code=400,
+            detail="Noto'g'ri mashina turi. Faqat: economy, comfort, business"
+        )
+    
+    # Get pricing from database or settings
+    config_key = f"pricing_{vehicle_type}"
+    cfg = db.query(SystemConfig).filter(SystemConfig.key == config_key).first()
+    
+    if cfg:
+        import json
+        pricing = json.loads(cfg.value)
+    else:
+        pricing = settings.vehicle_types[vehicle_type]
+    
+    base_fare = pricing["base_fare"]
+    per_km_rate = pricing["per_km_rate"]
+    per_minute_rate = pricing["per_minute_rate"]
+    
+    distance_cost = distance * per_km_rate
+    time_cost = duration * per_minute_rate
+    total_fare = base_fare + distance_cost + time_cost
+    
+    # Get commission
+    commission_cfg = db.query(SystemConfig).filter(SystemConfig.key == "commission_rate").first()
+    commission_rate = float(commission_cfg.value) if commission_cfg else settings.commission_rate
+    commission_amount = total_fare * commission_rate
+    driver_earnings = total_fare - commission_amount
+    
+    return {
+        "vehicle_type": vehicle_type,
+        "distance_km": distance,
+        "duration_minutes": duration,
+        "breakdown": {
+            "base_fare": base_fare,
+            "distance_cost": distance_cost,
+            "time_cost": time_cost
+        },
+        "total_fare": round(total_fare, 2),
+        "commission_rate": commission_rate,
+        "commission_amount": round(commission_amount, 2),
+        "driver_earnings": round(driver_earnings, 2),
+        "formula": f"{base_fare} + ({distance} × {per_km_rate}) + ({duration} × {per_minute_rate}) = {round(total_fare, 2)} so'm"
+    }

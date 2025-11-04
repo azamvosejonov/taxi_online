@@ -187,8 +187,12 @@ def verify_token(token: str) -> Optional[Dict[str, Any]]:
 
 async def save_upload_file(upload_file: UploadFile, folder: str = "general") -> str:
     """Save uploaded file and return file path"""
-    # Use absolute path for uploads directory (directories should already exist from Dockerfile)
-    upload_base_dir = Path("/app/uploads")
+    # Use configurable upload directory; default to project ./uploads for local dev/tests
+    try:
+        base_dir = getattr(settings, 'upload_dir', None)
+    except Exception:
+        base_dir = None
+    upload_base_dir = Path(base_dir) if base_dir else Path("./uploads")
     upload_dir = upload_base_dir / folder
 
     # Ensure directory exists (should already exist, but just in case)

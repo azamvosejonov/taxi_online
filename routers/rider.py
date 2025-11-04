@@ -3,6 +3,7 @@ Rider router - Passenger ride tracking and management
 """
 from typing import Optional
 from datetime import datetime
+import json
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -11,15 +12,58 @@ from database import get_db
 from models import User, Ride, DriverStatus
 from schemas import RideResponse
 from routers.auth import get_current_user
+from utils.helpers import calculate_distance
 
 router = APIRouter(prefix="/rider", tags=["Rider"])
 
 
 def require_rider(user: User) -> User:
-    """Check if user is a regular rider (not driver/admin)"""
-    if user.is_driver or user.is_admin:
-        raise HTTPException(status_code=403, detail="Driver/Admin access not allowed")
+    """Allow any authenticated active user to access rider views."""
+    if not user.is_active:
+        raise HTTPException(status_code=403, detail="Inactive user")
     return user
+
+
+def _parse_location(loc) -> Optional[dict]:
+    if isinstance(loc, dict):
+        return loc
+    if isinstance(loc, str) and loc:
+        try:
+            return json.loads(loc)
+        except Exception:
+            return None
+    return None
+
+
+def _ride_to_response(ride: Ride) -> RideResponse:
+    pickup = _parse_location(ride.pickup_location) or {}
+    dropoff = _parse_location(ride.dropoff_location) or {}
+    current = _parse_location(ride.current_location)
+    # Compute distance if possible
+    dist = 0.0
+    try:
+        if all(k in pickup for k in ("lat", "lng")) and all(k in dropoff for k in ("lat", "lng")):
+            dist = calculate_distance(float(pickup["lat"]), float(pickup["lng"]), float(dropoff["lat"]), float(dropoff["lng"]))
+    except Exception:
+        dist = 0.0
+
+    return RideResponse(
+        id=ride.id,
+        customer_id=ride.customer_id,
+        rider_id=ride.rider_id,
+        driver_id=ride.driver_id,
+        customer=None,
+        pickup_location=pickup,
+        dropoff_location=dropoff,
+        current_location=current,
+        status=ride.status,
+        fare=float(ride.fare or 0),
+        distance=float(dist),
+        duration=int(ride.duration or 0),
+        vehicle_type=ride.vehicle_type,
+        created_at=ride.created_at,
+        completed_at=ride.completed_at,
+    )
 
 
 @router.get("/current-ride", response_model=RideResponse)
@@ -30,16 +74,16 @@ async def get_current_ride(
     """Get current active ride for the rider"""
     require_rider(current_user)
 
-    # Find current ride for this user
+    # Find current ride for this user by rider_id
     ride = db.query(Ride).filter(
-        Ride.customer_id == current_user.id,
+        Ride.rider_id == current_user.id,
         Ride.status.in_(["pending", "accepted", "in_progress"])
     ).first()
 
     if not ride:
         raise HTTPException(status_code=404, detail="No active ride found")
 
-    return ride
+    return _ride_to_response(ride)
 
 
 @router.get("/ride/{ride_id}", response_model=RideResponse)
@@ -53,13 +97,13 @@ async def get_ride_details(
 
     ride = db.query(Ride).filter(
         Ride.id == ride_id,
-        Ride.customer_id == current_user.id
+        Ride.rider_id == current_user.id
     ).first()
 
     if not ride:
         raise HTTPException(status_code=404, detail="Ride not found")
 
-    return ride
+    return _ride_to_response(ride)
 
 
 @router.get("/ride/{ride_id}/status")
@@ -73,7 +117,7 @@ async def get_ride_status(
 
     ride = db.query(Ride).filter(
         Ride.id == ride_id,
-        Ride.customer_id == current_user.id
+        Ride.rider_id == current_user.id
     ).first()
 
     if not ride:
@@ -85,7 +129,10 @@ async def get_ride_status(
     if ride.driver_id:
         driver = db.query(User).filter(User.id == ride.driver_id).first()
         if driver and driver.current_location:
-            driver_location = driver.current_location
+            try:
+                driver_location = json.loads(driver.current_location) if isinstance(driver.current_location, str) else driver.current_location
+            except Exception:
+                driver_location = None
 
         # Get driver duty status
         ds = db.query(DriverStatus).filter(DriverStatus.driver_id == ride.driver_id).first()
@@ -93,14 +140,26 @@ async def get_ride_status(
             driver_status = "on_duty" if ds.is_on_duty else "off_duty"
 
     # Calculate estimated remaining cost (if in progress)
-    estimated_remaining_cost = 0
-    if ride.status == "in_progress":
-        # Simple estimation based on time passed
-        if ride.created_at:
-            time_passed_minutes = (datetime.utcnow() - ride.created_at).total_seconds() / 60
-            if ride.duration and time_passed_minutes > 0:
-                progress_ratio = min(time_passed_minutes / ride.duration, 1.0)
-                estimated_remaining_cost = ride.fare * (1 - progress_ratio)
+    estimated_remaining_cost = 0.0
+    time_passed_minutes = 0
+    if ride.created_at:
+        time_passed_minutes = (datetime.utcnow() - ride.created_at).total_seconds() / 60
+    progress_ratio = 0.0
+    if ride.duration and time_passed_minutes > 0:
+        progress_ratio = min(time_passed_minutes / max(ride.duration, 1), 1.0)
+    if ride.status == "in_progress" and ride.fare:
+        estimated_remaining_cost = float(ride.fare) * (1 - progress_ratio)
+
+    # Compute total planned distance
+    pickup = _parse_location(ride.pickup_location) or {}
+    dropoff = _parse_location(ride.dropoff_location) or {}
+    total_distance = 0.0
+    try:
+        if all(k in pickup for k in ("lat", "lng")) and all(k in dropoff for k in ("lat", "lng")):
+            total_distance = calculate_distance(float(pickup["lat"]), float(pickup["lng"]), float(dropoff["lat"]), float(dropoff["lng"]))
+    except Exception:
+        total_distance = 0.0
+    distance_traveled = total_distance * progress_ratio
 
     return {
         "ride_id": ride.id,
@@ -108,11 +167,11 @@ async def get_ride_status(
         "driver_id": ride.driver_id,
         "driver_location": driver_location,
         "driver_status": driver_status,
-        "current_fare": ride.fare or 0,
-        "estimated_remaining_cost": round(estimated_remaining_cost, 2),
-        "estimated_total_cost": ride.fare or 0,
-        "distance_traveled": ride.distance or 0,
-        "time_remaining_minutes": max(0, ride.duration - int(time_passed_minutes)) if ride.status == "in_progress" else ride.duration,
+        "current_fare": float(ride.fare or 0),
+        "estimated_remaining_cost": round(float(estimated_remaining_cost), 2),
+        "estimated_total_cost": float(ride.fare or 0),
+        "distance_traveled": round(float(distance_traveled), 2),
+        "time_remaining_minutes": max(0, int(ride.duration or 0) - int(time_passed_minutes)) if ride.status == "in_progress" else int(ride.duration or 0),
         "updated_at": datetime.utcnow().isoformat()
     }
 
@@ -128,7 +187,7 @@ async def get_driver_location(
 
     ride = db.query(Ride).filter(
         Ride.id == ride_id,
-        Ride.customer_id == current_user.id,
+        Ride.rider_id == current_user.id,
         Ride.status.in_(["accepted", "in_progress"])
     ).first()
 
@@ -144,7 +203,7 @@ async def get_driver_location(
 
     # Parse location JSON
     try:
-        location_data = eval(driver.current_location)  # Simple eval for JSON stored as string
+        location_data = json.loads(driver.current_location) if isinstance(driver.current_location, str) else driver.current_location
         return {
             "driver_id": driver.id,
             "driver_name": driver.full_name,
@@ -170,10 +229,10 @@ async def get_ride_history(
     offset = (page - 1) * limit
 
     rides = db.query(Ride).filter(
-        Ride.customer_id == current_user.id
+        Ride.rider_id == current_user.id
     ).order_by(Ride.created_at.desc()).offset(offset).limit(limit).all()
 
-    total_rides = db.query(Ride).filter(Ride.customer_id == current_user.id).count()
+    total_rides = db.query(Ride).filter(Ride.rider_id == current_user.id).count()
 
     return {
         "rides": rides,
@@ -195,7 +254,7 @@ async def cancel_ride(
 
     ride = db.query(Ride).filter(
         Ride.id == ride_id,
-        Ride.customer_id == current_user.id
+        Ride.rider_id == current_user.id
     ).first()
 
     if not ride:

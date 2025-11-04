@@ -111,13 +111,16 @@ async def create_order(
     customer = _get_or_create_customer(db, order.customer_phone, order.customer_name)
 
     # Calculate estimate using OSRM for accurate routing
+    route_geometry = None
     try:
         route_data = await MapService.get_route(
             order.pickup_location.lng, order.pickup_location.lat,
             order.dropoff_location.lng, order.dropoff_location.lat
         )
         distance = route_data.get('distance', 0) / 1000  # Convert meters to km
-        duration = route_data.get('duration', 0) / 60    # Convert seconds to minutes
+        # Convert seconds to minutes and cast to int minutes for schema
+        duration_min = int(round((route_data.get('duration', 0) or 0) / 60))
+        route_geometry = route_data.get('geometry')
     except Exception as e:
         # Fallback to simple calculation if OSRM fails
         logger.warning(f"OSRM failed, using fallback calculation: {str(e)}")
@@ -125,9 +128,24 @@ async def create_order(
             order.pickup_location.lat, order.pickup_location.lng,
             order.dropoff_location.lat, order.dropoff_location.lng
         )
-        duration = estimate_duration(distance)
+        duration_min = estimate_duration(distance)
     
-    fare = calculate_fare(distance, duration, order.vehicle_type.value)
+    fare = calculate_fare(distance, duration_min, order.vehicle_type.value)
+
+    # Reverse geocode if address/city not provided
+    try:
+        if not order.pickup_location.address:
+            info = await MapService.reverse_geocode(order.pickup_location.lat, order.pickup_location.lng)
+            if info:
+                order.pickup_location.address = info.get("display_name") or order.pickup_location.address
+                order.pickup_location.city = order.pickup_location.city or info.get("city")
+        if not order.dropoff_location.address:
+            info2 = await MapService.reverse_geocode(order.dropoff_location.lat, order.dropoff_location.lng)
+            if info2:
+                order.dropoff_location.address = info2.get("display_name") or order.dropoff_location.address
+                order.dropoff_location.city = order.dropoff_location.city or info2.get("city")
+    except Exception:
+        pass
 
     # Create ride
     ride = Ride(
@@ -137,7 +155,7 @@ async def create_order(
         dropoff_location=json.dumps(order.dropoff_location.dict()),
         status="pending",
         fare=fare,
-        duration=duration,
+        duration=duration_min,
         vehicle_type=order.vehicle_type.value,
     )
     db.add(ride)
@@ -166,8 +184,9 @@ async def create_order(
             status=ride.status,
             fare=ride.fare or 0,
             distance=distance,
-            duration=duration,
+            duration=duration_min,
             vehicle_type=ride.vehicle_type,
+            route_geometry=route_geometry,
             created_at=ride.created_at,
             completed_at=ride.completed_at,
         ),
@@ -179,7 +198,7 @@ async def create_order(
 @router.post("/order/{ride_id}/broadcast")
 async def broadcast_order(
     ride_id: int,
-    params: BroadcastRequest,
+    params: Optional[BroadcastRequest] = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -191,8 +210,11 @@ async def broadcast_order(
         raise HTTPException(status_code=404, detail="Ride not found")
 
     pickup = json.loads(ride.pickup_location)
+    radius = 3.0
+    if params and params.radius_km:
+        radius = params.radius_km
     driver_ids = _broadcast_to_nearby_drivers(
-        db, float(pickup.get("lat")), float(pickup.get("lng")), radius_km=params.radius_km or 3.0
+        db, float(pickup.get("lat")), float(pickup.get("lng")), radius_km=radius
     )
     return {"message": "Broadcasted", "count": len(driver_ids), "driver_ids": driver_ids}
 

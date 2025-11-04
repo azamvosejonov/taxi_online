@@ -10,18 +10,17 @@ class TimestampMixin(object):
 class User(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True, index=True)
+    email = Column(String, nullable=True)
     phone = Column(String, unique=True, index=True, nullable=False)
-    hashed_password = Column(String, nullable=False)
-    first_name = Column(String, nullable=False)  # Ism
-    last_name = Column(String, nullable=False)   # Familiya
+    password = Column(String, nullable=False)  # Actual column name in DB
     full_name = Column(String, nullable=False)   # To'liq ism
-    gender = Column(String, nullable=True)       # Jinsi
-    date_of_birth = Column(DateTime, nullable=True)  # Tug'ilgan sana
-    vehicle_make = Column(String, nullable=True)  # Avtomobil markasi
-    vehicle_color = Column(String, nullable=True) # Avtomobil rangi
-    position = Column(String, nullable=True)      # Pozitsiya
-    license_plate = Column(String, nullable=True, unique=True)  # Davlat raqami
-    tech_passport = Column(String, nullable=True, unique=True)  # Texpassport
+    profile_photo = Column(String, nullable=True)
+    # Vehicle info
+    vehicle_type = Column(String, nullable=True)
+    vehicle_number = Column(String, nullable=True)
+    license_number = Column(String, nullable=True)
+    vehicle_model = Column(String, nullable=True)
+    vehicle_color = Column(String, nullable=True)
     # System fields
     is_active = Column(Boolean, default=True)
     is_driver = Column(Boolean, default=True)  # All users are drivers by default
@@ -32,22 +31,23 @@ class User(Base):
     current_balance = Column(Float, default=0.0)  # Current wallet balance
     required_deposit = Column(Float, default=0.0)  # Required deposit for drivers
     rating = Column(Float, default=5.0)  # User rating
+    current_location = Column(String, nullable=True)  # JSON string
+    city = Column(String, nullable=True)
     total_rides = Column(Integer, default=0)  # Total number of rides
+    is_on_duty = Column(Boolean, default=False)
+    language = Column(String, default='uz')
+    emergency_contact = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    approved_at = Column(DateTime, nullable=True)
     
-    # Method to complete driver registration
-    def complete_driver_registration(self, 
-                                   vehicle_make: str, 
-                                   vehicle_color: str, 
-                                   position: str, 
-                                   license_plate: str, 
-                                   tech_passport: str):
-        self.vehicle_make = vehicle_make
-        self.vehicle_color = vehicle_color
-        self.position = position
-        self.license_plate = license_plate
-        self.tech_passport = tech_passport
+    # Property for backward compatibility
+    @property
+    def hashed_password(self):
+        return self.password
+    
+    @hashed_password.setter
+    def hashed_password(self, value):
+        self.password = value
         self.is_driver = True
         self.updated_at = datetime.utcnow()
         
@@ -360,3 +360,14 @@ class SystemConfig(Base):
     value = Column(String)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class OTPVerification(Base):
+    __tablename__ = "otp_verifications"
+
+    id = Column(Integer, primary_key=True, index=True)
+    phone = Column(String, index=True, nullable=False)
+    otp_code = Column(String, nullable=False)  # 6-digit code
+    is_verified = Column(Boolean, default=False)
+    expires_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    verified_at = Column(DateTime, nullable=True)

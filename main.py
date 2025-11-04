@@ -3,6 +3,7 @@ Royal Taxi API - Main application file
 Clean, organized FastAPI application with proper structure
 """
 from contextlib import asynccontextmanager
+import sqlite3
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -12,7 +13,7 @@ import json
 from typing import Dict, List
 from datetime import datetime
 from firebase_admin import credentials
-from celery import Celery
+# from celery import Celery  # Commented out temporarily
 from starlette.types import Lifespan
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 import os
@@ -37,19 +38,19 @@ from routers.rider import router as rider_router  # Rider tracking router
 from models import *  # noqa
 
 # Configure Celery application (used by worker/beat/flower via main.celery_app)
-celery_app = Celery(
-    "royaltaxi",
-    broker=settings.redis_url,
-    backend=settings.redis_url
-)
+# celery_app = Celery(
+#     "royaltaxi",
+#     broker=settings.redis_url,
+#     backend=settings.redis_url
+# )
 
-celery_app.conf.update(
-    task_serializer="json",
-    accept_content=["json"],
-    result_serializer="json",
-    timezone="UTC",
-    enable_utc=True
-)
+# celery_app.conf.update(
+#     task_serializer="json",
+#     accept_content=["json"],
+#     result_serializer="json",
+#     timezone="UTC",
+#     enable_utc=True
+# )
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -57,6 +58,27 @@ async def lifespan(app: FastAPI):
     # Create database tables
     Base.metadata.create_all(bind=engine)
     print(f"✅ Database tables created successfully for {settings.api_title}")
+    try:
+        db_url = str(engine.url)
+        print(f"🗄️  Database URL: {db_url}")
+        if engine.url.get_backend_name() == "sqlite":
+            db_path = engine.url.database
+            print(f"📁 SQLite file: {db_path}")
+            try:
+                conn = sqlite3.connect(db_path)
+                cur = conn.cursor()
+                cur.execute("SELECT name FROM sqlite_master WHERE type='table';")
+                tables = [t[0] for t in cur.fetchall()]
+                print(f"📋 Tables present: {tables}")
+                cur.execute("PRAGMA table_info(users);")
+                cols = [r[1] for r in cur.fetchall()]
+                print(f"👤 users columns: {cols}")
+                print(f"🔎 has is_on_duty: {'is_on_duty' in cols}")
+                conn.close()
+            except Exception as e:
+                print(f"⚠️ SQLite introspection failed: {e}")
+    except Exception as e:
+        print(f"⚠️ Could not print DB diagnostics: {e}")
 
     # Initialize Redis connection if available
     try:

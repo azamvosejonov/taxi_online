@@ -1,0 +1,114 @@
+[96mRoyal Taxi API Complete Test Suite[0m
+[96mTesting all 54 endpoints...[0m
+
+
+[94m================================================================================[0m
+[94m                      ROYAL TAXI - COMPLETE API TEST SUITE                      [0m
+[94m================================================================================[0m
+
+[96mTesting all 54 endpoints...[0m
+
+
+[94m================================================================================[0m
+[94m                        1. AUTH ENDPOINTS (6 endpoints)                         [0m
+[94m================================================================================[0m
+
+
+[96m────────────────────────────────────────────────────────────────────────────────[0m
+[96mPOST /api/v1/auth/register - Register[0m
+[96m────────────────────────────────────────────────────────────────────────────────[0m
+[91m✗[0m Register new user - Expected: 201, Got: 422
+  [91mDetails: {'detail': [{'type': 'missing', 'loc': ['body', 'first_name'], 'msg': 'Field required', 'input': {'phone': '+998902252836', 'password': 'test123456', 'full_name': 'Test User'}}, {'type': 'missing', 'loc': ['body', 'last_name'], 'msg': 'Field required', 'input': {'phone': '+998902252836', 'password': 'test123456', 'full_name': 'Test User'}}, {'type': 'missing', 'loc': ['body', 'gender'], 'msg': 'Field required', 'input': {'phone': '+998902252836', 'password': 'test123456', 'full_name': 'Test User'}}, {'type': 'missing', 'loc': ['body', 'date_of_birth'], 'msg': 'Field required', 'input': {'phone': '+998902252836', 'password': 'test123456', 'full_name': 'Test User'}}, {'type': 'missing', 'loc': ['body', 'vehicle_make'], 'msg': 'Field required', 'input': {'phone': '+998902252836', 'password': 'test123456', 'full_name': 'Test User'}}, {'type': 'missing', 'loc': ['body', 'vehicle_color'], 'msg': 'Field required', 'input': {'phone': '+998902252836', 'password': 'test123456', 'full_name': 'Test User'}}, {'type': 'missing', 'loc': ['body', 'position'], 'msg': 'Field required', 'input': {'phone': '+998902252836', 'password': 'test123456', 'full_name': 'Test User'}}, {'type': 'missing', 'loc': ['body', 'license_plate'], 'msg': 'Field required', 'input': {'phone': '+998902252836', 'password': 'test123456', 'full_name': 'Test User'}}, {'type': 'missing', 'loc': ['body', 'tech_passport'], 'msg': 'Field required', 'input': {'phone': '+998902252836', 'password': 'test123456', 'full_name': 'Test User'}}]}[0m
+
+[96m────────────────────────────────────────────────────────────────────────────────[0m
+[96mPOST /api/v1/auth/login - Login[0m
+[96m────────────────────────────────────────────────────────────────────────────────[0m
+[91m✗[0m Login as admin - Expected: 200, Got: 500
+  [91mDetails: Internal Server Error[0m
+
+[96m────────────────────────────────────────────────────────────────────────────────[0m
+[96mPOST /api/v1/auth/logout - Logout[0m
+[96m────────────────────────────────────────────────────────────────────────────────[0m
+
+[96m────────────────────────────────────────────────────────────────────────────────[0m
+[96mPOST /api/v1/auth/send-otp - Send OTP[0m
+[96m────────────────────────────────────────────────────────────────────────────────[0m
+[92m✓[0m Send OTP - Expected: 200, Got: 200
+
+[96m────────────────────────────────────────────────────────────────────────────────[0m
+[96mPOST /api/v1/auth/verify-otp - Verify OTP[0m
+[96m────────────────────────────────────────────────────────────────────────────────[0m
+[91m✗[0m Verify OTP - Expected: 200, Got: 500
+  [91mDetails: Internal Server Error[0m
+
+[96m────────────────────────────────────────────────────────────────────────────────[0m
+[96mPOST /api/v1/auth/complete-profile - Complete Profile[0m
+[96m────────────────────────────────────────────────────────────────────────────────[0m
+[91m✗[0m Complete profile - Expected: 201, Got: 422
+  [91mDetails: {'detail': [{'type': 'missing', 'loc': ['body', 'first_name'], 'msg': 'Field required', 'input': {'phone': '+998902252836', 'full_name': 'OTP User', 'vehicle_type': 'economy', 'vehicle_number': '01T836AA', 'license_number': 'TEST52836', 'vehicle_model': 'Chevrolet Spark', 'vehicle_color': 'White'}}, {'type': 'missing', 'loc': ['body', 'last_name'], 'msg': 'Field required', 'input': {'phone': '+998902252836', 'full_name': 'OTP User', 'vehicle_type': 'economy', 'vehicle_number': '01T836AA', 'license_number': 'TEST52836', 'vehicle_model': 'Chevrolet Spark', 'vehicle_color': 'White'}}, {'type': 'missing', 'loc': ['body', 'gender'], 'msg': 'Field required', 'input': {'phone': '+998902252836', 'full_name': 'OTP User', 'vehicle_type': 'economy', 'vehicle_number': '01T836AA', 'license_number': 'TEST52836', 'vehicle_model': 'Chevrolet Spark', 'vehicle_color': 'White'}}, {'type': 'missing', 'loc': ['body', 'date_of_birth'], 'msg': 'Field required', 'input': {'phone': '+998902252836', 'full_name': 'OTP User', 'vehicle_type': 'economy', 'vehicle_number': '01T836AA', 'license_number': 'TEST52836', 'vehicle_model': 'Chevrolet Spark', 'vehicle_color': 'White'}}, {'type': 'missing', 'loc': ['body', 'vehicle_make'], 'msg': 'Field required', 'input': {'phone': '+998902252836', 'full_name': 'OTP User', 'vehicle_type': 'economy', 'vehicle_number': '01T836AA', 'license_number': 'TEST52836', 'vehicle_model': 'Chevrolet Spark', 'vehicle_color': 'White'}}, {'type': 'missing', 'loc': ['body', 'position'], 'msg': 'Field required', 'input': {'phone': '+998902252836', 'full_name': 'OTP User', 'vehicle_type': 'economy', 'vehicle_number': '01T836AA', 'license_number': 'TEST52836', 'vehicle_model': 'Chevrolet Spark', 'vehicle_color': 'White'}}, {'type': 'missing', 'loc': ['body', 'license_plate'], 'msg': 'Field required', 'input': {'phone': '+998902252836', 'full_name': 'OTP User', 'vehicle_type': 'economy', 'vehicle_number': '01T836AA', 'license_number': 'TEST52836', 'vehicle_model': 'Chevrolet Spark', 'vehicle_color': 'White'}}, {'type': 'missing', 'loc': ['body', 'tech_passport'], 'msg': 'Field required', 'input': {'phone': '+998902252836', 'full_name': 'OTP User', 'vehicle_type': 'economy', 'vehicle_number': '01T836AA', 'license_number': 'TEST52836', 'vehicle_model': 'Chevrolet Spark', 'vehicle_color': 'White'}}]}[0m
+
+[94m================================================================================[0m
+[94m                        2. USERS ENDPOINTS (6 endpoints)                        [0m
+[94m================================================================================[0m
+
+[93m⚠ Skipping user tests - no token[0m
+
+[94m================================================================================[0m
+[94m                       3. ADMIN ENDPOINTS (20 endpoints)                        [0m
+[94m================================================================================[0m
+
+[93m⚠ Skipping admin tests - no admin token[0m
+
+[94m================================================================================[0m
+[94m                        4. FILES ENDPOINTS (4 endpoints)                        [0m
+[94m================================================================================[0m
+
+
+[96m────────────────────────────────────────────────────────────────────────────────[0m
+[96mFile Upload Endpoints[0m
+[96m────────────────────────────────────────────────────────────────────────────────[0m
+[93m⊘[0m Upload profile picture - Requires actual file
+[93m⊘[0m Upload driver documents - Requires actual file
+[93m⊘[0m Upload file to folder - Requires actual file
+[93m⊘[0m Get uploaded file - Requires existing file
+
+[94m================================================================================[0m
+[94m                     5. DISPATCHER ENDPOINTS (7 endpoints)                      [0m
+[94m================================================================================[0m
+
+[93m⚠ Skipping dispatcher tests - no token[0m
+
+[94m================================================================================[0m
+[94m                       6. DRIVER ENDPOINTS (5 endpoints)                        [0m
+[94m================================================================================[0m
+
+[93m⚠ Skipping driver tests - no token[0m
+
+[94m================================================================================[0m
+[94m                        7. RIDER ENDPOINTS (6 endpoints)                        [0m
+[94m================================================================================[0m
+
+[93m⚠ Skipping rider tests - no token[0m
+
+[94m================================================================================[0m
+[94m                                  TEST SUMMARY                                  [0m
+[94m================================================================================[0m
+
+Total Endpoints: 54
+Total Tests Run: 9
+[92mPassed: 1[0m
+[91mFailed: 4[0m
+[93mSkipped: 4[0m
+Pass Rate: 11.1%
+
+[93m⚠ Some tests failed. Please review the output above.[0m
+
+[96mEndpoint Coverage:[0m
+  Auth: 6/6
+  Users: 6/6
+  Admin: 20/20
+  Files: 4/4
+  Dispatcher: 7/7
+  Driver: 5/5
+  Rider: 6/6
+  [92mTotal: 54/54 endpoints[0m

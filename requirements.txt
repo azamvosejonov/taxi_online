@@ -47,9 +47,13 @@ xlsxwriter==3.2.0
 # Utils
 requests==2.32.3
 python-decouple==3.8
+python-dotenv==1.2.1
 typing_extensions==4.12.2
 wrapt==1.16.0
 attrs==24.2.0
+
+# SMS Service
+twilio==9.0.4
 
 # Development tools
 pytest==8.3.3

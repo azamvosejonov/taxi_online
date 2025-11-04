@@ -184,8 +184,8 @@ class UserResponse(BaseModel):
     id: int
     phone: str
     full_name: str
-    gender: Optional[str]
-    date_of_birth: Optional[datetime]
+    gender: Optional[str] = None
+    date_of_birth: Optional[datetime] = None
     profile_photo: Optional[str] = None
     is_driver: bool
     is_dispatcher: bool = False
@@ -194,13 +194,13 @@ class UserResponse(BaseModel):
     language: str = "uz"
     emergency_contact: Optional[str] = None
     vehicle_type: Optional[str] = None
-    vehicle_make: Optional[str]
+    vehicle_make: Optional[str] = None
     vehicle_model: Optional[str] = None
-    vehicle_color: Optional[str]
-    license_plate: Optional[str]
-    tech_passport: Optional[str]
+    vehicle_color: Optional[str] = None
+    license_plate: Optional[str] = None
+    tech_passport: Optional[str] = None
     license_number: Optional[str] = None
-    position: Optional[str]
+    position: Optional[str] = None
     rating: Optional[float]
     total_rides: int
     current_balance: float
@@ -223,6 +223,14 @@ class UserResponse(BaseModel):
         if 'full_name' not in data and 'first_name' in data and 'last_name' in data:
             data['full_name'] = f"{data['first_name']} {data['last_name']}"
         
+        # Map legacy output fields from new model attributes if present
+        if 'vehicle_make' not in data and 'vehicle_model' in data and data.get('vehicle_make') is None:
+            data['vehicle_make'] = data.get('vehicle_model')
+        if 'license_plate' not in data and 'vehicle_number' in data and data.get('license_plate') is None:
+            data['license_plate'] = data.get('vehicle_number')
+        if 'tech_passport' not in data and 'license_number' in data and data.get('tech_passport') is None:
+            data['tech_passport'] = data.get('license_number')
+
         # Convert None boolean values to False
         for field in ['is_driver', 'is_dispatcher', 'is_admin', 'is_active', 'is_approved']:
             if field in data and data[field] is None:
@@ -261,6 +269,7 @@ class RideResponse(BaseModel):
     distance: float
     duration: int
     vehicle_type: str
+    route_geometry: Optional[Dict[str, Any]] = None
     created_at: datetime
     completed_at: Optional[datetime]
 
@@ -359,6 +368,31 @@ class CompleteRideRequest(BaseModel):
 class AdminNotifyRequest(BaseModel):
     title: str
     body: str
+
+# Pricing schemas
+class VehicleTypePrice(BaseModel):
+    """Vehicle type pricing configuration"""
+    vehicle_type: str = Field(..., description="Vehicle type: economy, comfort, business")
+    base_fare: float = Field(..., gt=0, description="Boshlang'ich narx (so'm)")
+    per_km_rate: float = Field(..., gt=0, description="Har km uchun narx (so'm)")
+    per_minute_rate: float = Field(..., gt=0, description="Har daqiqa uchun narx (so'm)")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "vehicle_type": "economy",
+                "base_fare": 10000,
+                "per_km_rate": 2000,
+                "per_minute_rate": 500
+            }
+        }
+
+class PricingConfigResponse(BaseModel):
+    """Response with all pricing configurations"""
+    economy: Dict[str, Any]
+    comfort: Dict[str, Any]
+    business: Dict[str, Any]
+    commission_rate: float
 
 # Authentication schemas
 class UserLogin(BaseModel):
@@ -521,6 +555,74 @@ class CustomerResponse(CustomerBase):
 
     class Config:
         from_attributes = True
+
+# OTP Authentication schemas
+class SendOTPRequest(BaseModel):
+    """Request to send OTP to phone number"""
+    phone: str = Field(..., pattern=r"^\+998\d{9}$", description="O'zbekiston telefon raqami formati (+998XXXXXXXXX)")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "phone": "+998901234567"
+            }
+        }
+
+class VerifyOTPRequest(BaseModel):
+    """Request to verify OTP code"""
+    phone: str = Field(..., pattern=r"^\+998\d{9}$", description="O'zbekiston telefon raqami formati")
+    otp_code: str = Field(..., min_length=6, max_length=6, pattern=r"^\d{6}$", description="6 raqamli tasdiqlash kodi")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "phone": "+998901234567",
+                "otp_code": "123456"
+            }
+        }
+
+class CompleteProfileRequest(BaseModel):
+    """Request to complete user profile after OTP verification"""
+    phone: str = Field(..., pattern=r"^\+998\d{9}$", description="O'zbekiston telefon raqami formati")
+    first_name: str = Field(..., min_length=2, max_length=50, description="Ism")
+    last_name: str = Field(..., min_length=2, max_length=50, description="Familiya")
+    gender: str = Field(..., description="Jinsi (Erkak/Ayol)")
+    date_of_birth: date = Field(..., description="Tug'ilgan sana (YYYY-MM-DD)")
+    vehicle_make: str = Field(..., description="Avtomobil markasi")
+    vehicle_color: str = Field(..., description="Avtomobil rangi")
+    position: str = Field(..., description="Pozitsiya")
+    license_plate: str = Field(..., description="Davlat raqami")
+    tech_passport: str = Field(..., description="Texpassport raqami")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "phone": "+998901234567",
+                "first_name": "Falonchi",
+                "last_name": "Falonchiyev",
+                "gender": "Erkak",
+                "date_of_birth": "1990-01-01",
+                "vehicle_make": "Chevrolet",
+                "vehicle_color": "Qora",
+                "position": "Haydovchi",
+                "license_plate": "01A123AA",
+                "tech_passport": "AA1234567"
+            }
+        }
+
+class OTPResponse(BaseModel):
+    """Response after sending OTP"""
+    message: str
+    phone: str
+    expires_in: int  # seconds
+    otp_code: Optional[str] = None  # Only for development/testing
+
+class VerifyOTPResponse(BaseModel):
+    """Response after verifying OTP"""
+    message: str
+    phone: str
+    verified: bool
+    needs_profile_completion: bool
 
 # Authentication schemas
 class UserLogin(BaseModel):

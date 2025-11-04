@@ -8,6 +8,7 @@ class MapService:
     """Xarita xizmatlari uchun asosiy klass"""
     
     OSRM_BASE_URL = "http://router.project-osrm.org/route/v1/driving/"
+    NOMINATIM_REVERSE_URL = "https://nominatim.openstreetmap.org/reverse"
     
     @classmethod
     async def get_route(
@@ -39,10 +40,46 @@ class MapService:
                         "duration": route['duration'],  # sekundda
                         "geometry": route['geometry']   # GeoJSON LineString
                     }
-                    
+                
         except Exception as e:
             logger.error(f"Xarita xizmatida xatolik: {str(e)}")
             return {"error": f"Xarita xizmatida xatolik: {str(e)}"}
+    
+    @classmethod
+    async def reverse_geocode(
+        cls,
+        lat: float,
+        lon: float,
+        language: str = "uz"
+    ) -> Dict:
+        """Koordinatalardan manzilni topish (Nominatim)."""
+        params = {
+            "format": "jsonv2",
+            "lat": str(lat),
+            "lon": str(lon),
+            "accept-language": language,
+            "addressdetails": 1
+        }
+        headers = {
+            "User-Agent": "RoyalTaxi/1.0 (contact: admin@example.com)"
+        }
+        try:
+            async with aiohttp.ClientSession(headers=headers) as session:
+                async with session.get(cls.NOMINATIM_REVERSE_URL, params=params) as resp:
+                    if resp.status != 200:
+                        logger.warning(f"Nominatim qaytardi: {resp.status}")
+                        return {}
+                    data = await resp.json()
+                    address = data.get("address", {}) or {}
+                    city = address.get("city") or address.get("town") or address.get("village") or address.get("state")
+                    return {
+                        "display_name": data.get("display_name"),
+                        "city": city,
+                        "address": address
+                    }
+        except Exception as e:
+            logger.error(f"Reverse geocoding xatosi: {e}")
+            return {}
     
     @staticmethod
     def calculate_eta(distance: float, avg_speed_kmh: float = 30.0) -> int:
