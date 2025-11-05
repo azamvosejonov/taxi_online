@@ -656,3 +656,47 @@ class IncomeStats(BaseModel):
     average_monthly_revenue: float
     top_earning_days: List[Dict[str, Any]]
     revenue_trend: List[Dict[str, Any]]  # Last 30 days trend
+
+# ============= ADDITIONAL SERVICES (Qo'shimcha xizmatlar) =============
+
+class AdditionalServiceCreate(BaseModel):
+    """Qo'shimcha xizmat yaratish"""
+    name: str = Field(..., example="konditsioner", description="Xizmat nomi (unique)")
+    name_uz: str = Field(..., example="Konditsioner", description="O'zbekcha nomi")
+    name_ru: Optional[str] = Field(None, example="Кондиционер", description="Ruscha nomi")
+    icon: Optional[str] = Field(None, example="❄️", description="Icon (emoji yoki URL)")
+    price: float = Field(..., ge=0, example=5000.0, description="Narxi (UZS)")
+    is_active: bool = Field(True, description="Faol/Faol emas")
+    display_order: int = Field(0, ge=0, description="Ko'rsatish tartibi")
+    description: Optional[str] = Field(None, example="Avtomobilni sovutish", description="Tavsif")
+
+class AdditionalServiceUpdate(BaseModel):
+    """Qo'shimcha xizmatni yangilash"""
+    name_uz: Optional[str] = None
+    name_ru: Optional[str] = None
+    icon: Optional[str] = None
+    price: Optional[float] = Field(None, ge=0)
+    is_active: Optional[bool] = None
+    display_order: Optional[int] = Field(None, ge=0)
+    description: Optional[str] = None
+
+class AdditionalServiceResponse(BaseModel):
+    """Qo'shimcha xizmat response"""
+    id: int
+    name: str
+    name_uz: str
+    name_ru: Optional[str]
+    icon: Optional[str]
+    price: float
+    is_active: bool
+    display_order: int
+    description: Optional[str]
+    created_at: datetime
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+class AdditionalServiceToggle(BaseModel):
+    """Xizmatni faollashtirish/o'chirish"""
+    is_active: bool = Field(..., description="Faol/Faol emas")

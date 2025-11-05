@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-BASE_URL = "http://localhost:8080/api/v1"
+BASE_URL = "http://176.57.184.175:8080/api/v1"
 
 class Colors:
     GREEN = '\033[92m'

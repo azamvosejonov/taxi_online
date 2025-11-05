@@ -12,7 +12,10 @@ import logging
 import json
 from typing import Dict, List
 from datetime import datetime
-from firebase_admin import credentials
+try:
+    from firebase_admin import credentials
+except ImportError:
+    credentials = None
 # from celery import Celery  # Commented out temporarily
 from starlette.types import Lifespan
 from starlette.middleware.trustedhost import TrustedHostMiddleware
@@ -33,6 +36,7 @@ from routers import (
 from routers.dispatcher import router as dispatcher_router
 from routers.driver import router as driver_router
 from routers.rider import router as rider_router  # Rider tracking router
+from routers.services import router as services_router  # Additional services
 
 # Import models for table creation
 from models import *  # noqa
@@ -91,11 +95,13 @@ async def lifespan(app: FastAPI):
 
     # Initialize Firebase if credentials available
     try:
-        if hasattr(settings, 'firebase_credentials_path') and settings.firebase_credentials_path:
+        if credentials and hasattr(settings, 'firebase_credentials_path') and settings.firebase_credentials_path:
             import firebase_admin
             cred = credentials.Certificate(settings.firebase_credentials_path)
             firebase_admin.initialize_app(cred)
             print("✅ Firebase initialized for push notifications")
+        elif not credentials:
+            print("⚠️ Firebase not available (firebase_admin not installed)")
     except Exception as e:
         print(f"⚠️ Firebase initialization failed: {e}")
 
@@ -154,6 +160,7 @@ app.include_router(files, prefix="/api/v1")
 app.include_router(dispatcher_router, prefix="/api/v1")
 app.include_router(driver_router, prefix="/api/v1")
 app.include_router(rider_router, prefix="/api/v1")  # Rider tracking APIs
+app.include_router(services_router)  # Additional services (already has /api/v1 prefix)
 
 @app.get("/", tags=["Health"])
 async def root():

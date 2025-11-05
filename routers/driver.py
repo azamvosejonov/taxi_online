@@ -3,16 +3,17 @@ Driver router - Driver duty status, ride acceptance, progress, and stats
 """
 from typing import Optional, Dict, Any
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from database import get_db
-from models import User, Ride, Transaction, Payment, SystemConfig, DriverStatus
-from schemas import DriverStatusUpdate, CompleteRideRequest
+from models import User, Ride, Transaction, Payment, SystemConfig, DriverStatus, Notification
+from schemas import DriverStatusUpdate, CompleteRideRequest, PricingConfigResponse
 from routers.auth import get_current_user
 from utils.helpers import calculate_distance
+from sqlalchemy import func, extract
 from websocket import manager  # WebSocket manager import
 
 router = APIRouter(prefix="/driver", tags=["Driver"])
@@ -258,4 +259,369 @@ async def driver_stats(
         "total_revenue": total_revenue,
         "total_km": total_km,
         "current_balance": float(current_user.current_balance or 0),
+    }
+
+
+@router.get("/pricing", response_model=PricingConfigResponse)
+async def get_driver_pricing(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Haydovchi uchun narxlarni ko'rish (read-only)
+    
+    **Returns:**
+    - Barcha transport turlari uchun narxlar
+    - Komissiya stavkasi
+    """
+    require_driver(current_user)
+    
+    # Get all pricing configs
+    economy_config = db.query(SystemConfig).filter(SystemConfig.key == "pricing_economy").first()
+    comfort_config = db.query(SystemConfig).filter(SystemConfig.key == "pricing_comfort").first()
+    business_config = db.query(SystemConfig).filter(SystemConfig.key == "pricing_business").first()
+    commission_config = db.query(SystemConfig).filter(SystemConfig.key == "commission_rate").first()
+    
+    # Default values
+    economy = {"base_fare": 10000, "per_km_rate": 2000, "per_minute_rate": 500}
+    comfort = {"base_fare": 15000, "per_km_rate": 3000, "per_minute_rate": 750}
+    business = {"base_fare": 25000, "per_km_rate": 5000, "per_minute_rate": 1000}
+    commission_rate = 0.10
+    
+    # Parse from DB if exists
+    if economy_config:
+        try:
+            economy = json.loads(economy_config.value)
+        except:
+            pass
+    
+    if comfort_config:
+        try:
+            comfort = json.loads(comfort_config.value)
+        except:
+            pass
+    
+    if business_config:
+        try:
+            business = json.loads(business_config.value)
+        except:
+            pass
+    
+    if commission_config:
+        try:
+            commission_rate = float(commission_config.value)
+        except:
+            pass
+    
+    return {
+        "economy": economy,
+        "comfort": comfort,
+        "business": business,
+        "commission_rate": commission_rate
+    }
+
+
+@router.get("/rides/history")
+async def get_driver_ride_history(
+    page: int = 1,
+    limit: int = 20,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Haydovchi safar tarixi
+    
+    **Query Parameters:**
+    - page: Sahifa raqami (default: 1)
+    - limit: Har sahifada nechta (default: 20, max: 100)
+    
+    **Returns:**
+    - Haydovchi barcha safarlari ro'yxati (eng yangidan eskilariga)
+    """
+    require_driver(current_user)
+    
+    # Validate and limit
+    if limit > 100:
+        limit = 100
+    if page < 1:
+        page = 1
+    
+    offset = (page - 1) * limit
+    
+    # Get total count
+    total = db.query(Ride).filter(Ride.driver_id == current_user.id).count()
+    
+    # Get rides with pagination (newest first)
+    rides = db.query(Ride).filter(
+        Ride.driver_id == current_user.id
+    ).order_by(Ride.created_at.desc()).offset(offset).limit(limit).all()
+    
+    # Format rides
+    rides_list = []
+    for ride in rides:
+        pickup = None
+        dropoff = None
+        
+        try:
+            if ride.pickup_location:
+                pickup = json.loads(ride.pickup_location)
+        except:
+            pass
+        
+        try:
+            if ride.dropoff_location:
+                dropoff = json.loads(ride.dropoff_location)
+        except:
+            pass
+        
+        rides_list.append({
+            "id": ride.id,
+            "customer_id": ride.customer_id,
+            "status": ride.status,
+            "fare": ride.fare,
+            "duration": ride.duration,
+            "vehicle_type": ride.vehicle_type,
+            "pickup_location": pickup,
+            "dropoff_location": dropoff,
+            "created_at": ride.created_at.isoformat() if ride.created_at else None,
+            "completed_at": ride.completed_at.isoformat() if ride.completed_at else None
+        })
+    
+    pages = (total + limit - 1) // limit  # Ceiling division
+    
+    return {
+        "rides": rides_list,
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "pages": pages
+    }
+
+
+@router.get("/calculate-fare")
+async def calculate_fare(
+    distance: float,
+    duration: int,
+    vehicle_type: str = "economy",
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Taxometer - Narxni hisoblash (Haydovchi uchun)
+    
+    **Query Parameters:**
+    - distance: Masofa (km)
+    - duration: Vaqt (daqiqa)
+    - vehicle_type: economy, comfort, yoki business (default: economy)
+    
+    **Returns:**
+    - Hisoblangan narx, komissiya, va haydovchi daromadi
+    """
+    require_driver(current_user)
+    
+    # Get pricing config
+    config_key = f"pricing_{vehicle_type}"
+    pricing_config = db.query(SystemConfig).filter(SystemConfig.key == config_key).first()
+    
+    # Default values
+    base_fare = 10000
+    per_km_rate = 2000
+    per_minute_rate = 500
+    
+    if vehicle_type == "comfort":
+        base_fare = 15000
+        per_km_rate = 3000
+        per_minute_rate = 750
+    elif vehicle_type == "business":
+        base_fare = 25000
+        per_km_rate = 5000
+        per_minute_rate = 1000
+    
+    # Override with DB config if exists
+    if pricing_config:
+        try:
+            config_data = json.loads(pricing_config.value)
+            base_fare = config_data.get("base_fare", base_fare)
+            per_km_rate = config_data.get("per_km_rate", per_km_rate)
+            per_minute_rate = config_data.get("per_minute_rate", per_minute_rate)
+        except:
+            pass
+    
+    # Calculate fare
+    distance_cost = distance * per_km_rate
+    time_cost = duration * per_minute_rate
+    total_fare = base_fare + distance_cost + time_cost
+    
+    # Get commission rate
+    commission_rate = get_commission_rate(db)
+    commission_amount = round(total_fare * commission_rate, 2)
+    driver_earnings = round(total_fare - commission_amount, 2)
+    
+    return {
+        "vehicle_type": vehicle_type,
+        "distance_km": distance,
+        "duration_minutes": duration,
+        "breakdown": {
+            "base_fare": base_fare,
+            "distance_cost": distance_cost,
+            "time_cost": time_cost
+        },
+        "total_fare": round(total_fare, 2),
+        "commission_rate": commission_rate,
+        "commission_amount": commission_amount,
+        "driver_earnings": driver_earnings,
+        "formula": f"{base_fare} + ({distance} × {per_km_rate}) + ({duration} × {per_minute_rate}) = {round(total_fare, 2)} so'm"
+    }
+
+
+@router.get("/notifications")
+async def get_driver_notifications(
+    page: int = 1,
+    limit: int = 20,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Haydovchi xabarlari tarixi
+    
+    **Query Parameters:**
+    - page: Sahifa raqami (default: 1)
+    - limit: Har sahifada nechta (default: 20, max: 100)
+    
+    **Returns:**
+    - Haydovchiga yuborilgan barcha xabarlar (eng yangidan eskilariga)
+    """
+    require_driver(current_user)
+    
+    # Validate and limit
+    if limit > 100:
+        limit = 100
+    if page < 1:
+        page = 1
+    
+    offset = (page - 1) * limit
+    
+    # Get total count
+    total = db.query(Notification).filter(
+        Notification.user_id == current_user.id
+    ).count()
+    
+    # Get notifications with pagination (newest first)
+    notifications = db.query(Notification).filter(
+        Notification.user_id == current_user.id
+    ).order_by(Notification.created_at.desc()).offset(offset).limit(limit).all()
+    
+    # Format notifications
+    notifications_list = []
+    for notif in notifications:
+        notifications_list.append({
+            "id": notif.id,
+            "title": notif.title,
+            "body": notif.body,
+            "notification_type": notif.notification_type,
+            "is_read": notif.is_read,
+            "created_at": notif.created_at.isoformat() if notif.created_at else None
+        })
+    
+    pages = (total + limit - 1) // limit
+    
+    return {
+        "notifications": notifications_list,
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "pages": pages
+    }
+
+
+@router.get("/stats/detailed")
+async def driver_stats_detailed(
+    period: str = "all",  # all, daily, weekly, monthly
+    date: Optional[str] = None,  # YYYY-MM-DD format
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Haydovchi uchun batafsil statistika
+    
+    **Query Parameters:**
+    - period: all, daily, weekly, monthly (default: all)
+    - date: YYYY-MM-DD format (optional, for daily/weekly/monthly)
+    
+    **Returns:**
+    - Tanlangan davr uchun batafsil statistika
+    """
+    require_driver(current_user)
+    
+    query = db.query(Ride).filter(Ride.driver_id == current_user.id)
+    
+    # Apply period filter
+    if period == "daily" and date:
+        try:
+            target_date = datetime.strptime(date, "%Y-%m-%d").date()
+            query = query.filter(func.date(Ride.created_at) == target_date)
+        except:
+            raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+    
+    elif period == "weekly" and date:
+        try:
+            target_date = datetime.strptime(date, "%Y-%m-%d")
+            # Get week start (Monday)
+            week_start = target_date - timedelta(days=target_date.weekday())
+            week_end = week_start + timedelta(days=7)
+            query = query.filter(Ride.created_at >= week_start, Ride.created_at < week_end)
+        except:
+            raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+    
+    elif period == "monthly" and date:
+        try:
+            target_date = datetime.strptime(date, "%Y-%m-%d")
+            query = query.filter(
+                extract('year', Ride.created_at) == target_date.year,
+                extract('month', Ride.created_at) == target_date.month
+            )
+        except:
+            raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+    
+    # Calculate stats
+    total_rides = query.count()
+    completed_rides = query.filter(Ride.status == "completed").count()
+    cancelled_rides = query.filter(Ride.status == "cancelled").count()
+    
+    # Get payments
+    completed = query.filter(Ride.status == "completed").all()
+    total_revenue = 0.0
+    total_km = 0.0
+    total_commission = 0.0
+    
+    commission_rate = get_commission_rate(db)
+    
+    for ride in completed:
+        fare = float(ride.fare or 0)
+        total_revenue += fare
+        total_commission += round(fare * commission_rate, 2)
+        
+        # Calculate distance
+        try:
+            p = json.loads(ride.pickup_location) if ride.pickup_location else None
+            d = json.loads(ride.dropoff_location) if ride.dropoff_location else None
+            if p and d and all(k in p for k in ("lat", "lng")) and all(k in d for k in ("lat", "lng")):
+                total_km += calculate_distance(float(p["lat"]), float(p["lng"]), float(d["lat"]), float(d["lng"]))
+        except Exception:
+            continue
+    
+    driver_earnings = total_revenue - total_commission
+    
+    return {
+        "period": period,
+        "date": date,
+        "total_rides": total_rides,
+        "completed_rides": completed_rides,
+        "cancelled_rides": cancelled_rides,
+        "total_revenue": round(total_revenue, 2),
+        "total_commission": round(total_commission, 2),
+        "driver_earnings": round(driver_earnings, 2),
+        "total_km": round(total_km, 2),
+        "current_balance": float(current_user.current_balance or 0),
+        "commission_rate": commission_rate
     }

@@ -105,6 +105,7 @@ class Ride(Base):
     gps_tracks = relationship("GPSTrack", back_populates="ride")
     routes = relationship("Route", back_populates="ride")
     reviews = relationship("Review", back_populates="ride")
+    ride_services = relationship("RideService", back_populates="ride")
 
 class Payment(Base):
     __tablename__ = "payments"
@@ -371,3 +372,36 @@ class OTPVerification(Base):
     expires_at = Column(DateTime, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     verified_at = Column(DateTime, nullable=True)
+
+class AdditionalService(Base):
+    """Qo'shimcha xizmatlar (Konditsioner, Yukkona, bonus va h.k.)"""
+    __tablename__ = "additional_services"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False, unique=True)  # Konditsioner, Yukkona
+    name_uz = Column(String, nullable=False)  # O'zbekcha nomi
+    name_ru = Column(String, nullable=True)  # Ruscha nomi
+    icon = Column(String, nullable=True)  # Icon emoji yoki URL
+    price = Column(Float, default=0.0)  # Narxi (UZS)
+    is_active = Column(Boolean, default=True)  # Faol/Faol emas
+    display_order = Column(Integer, default=0)  # Ko'rsatish tartibi
+    description = Column(String, nullable=True)  # Qisqa tavsif
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    ride_services = relationship("RideService", back_populates="service")
+
+class RideService(Base):
+    """Safar uchun tanlangan qo'shimcha xizmatlar"""
+    __tablename__ = "ride_services"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    ride_id = Column(Integer, ForeignKey("rides.id"), nullable=False)
+    service_id = Column(Integer, ForeignKey("additional_services.id"), nullable=False)
+    price_at_booking = Column(Float, default=0.0)  # Buyurtma vaqtidagi narx
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    ride = relationship("Ride")
+    service = relationship("AdditionalService", back_populates="ride_services")

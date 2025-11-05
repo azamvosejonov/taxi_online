@@ -3,6 +3,10 @@ Configuration management for Royal Taxi backend
 """
 import os
 from typing import Optional
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Database configuration
 # Default to instance directory to avoid mixing DB files in project root
@@ -86,6 +90,8 @@ TWILIO_ACCOUNT_SID: str = os.getenv("TWILIO_ACCOUNT_SID", "")
 TWILIO_AUTH_TOKEN: str = os.getenv("TWILIO_AUTH_TOKEN", "")
 TWILIO_PHONE_NUMBER: str = os.getenv("TWILIO_PHONE_NUMBER", "")
 TWILIO_ENABLED: bool = os.getenv("TWILIO_ENABLED", "false").lower() == "true"
+TWILIO_VERIFY_SERVICE_SID: str = os.getenv("TWILIO_VERIFY_SERVICE_SID", "")
+TWILIO_USE_VERIFY: bool = os.getenv("TWILIO_USE_VERIFY", "false").lower() == "true"
 
 class Settings:
     """Application settings singleton"""
@@ -117,6 +123,8 @@ class Settings:
         self.twilio_auth_token: str = TWILIO_AUTH_TOKEN
         self.twilio_phone_number: str = TWILIO_PHONE_NUMBER
         self.twilio_enabled: bool = TWILIO_ENABLED
+        self.twilio_verify_service_sid: str = TWILIO_VERIFY_SERVICE_SID
+        self.twilio_use_verify: bool = TWILIO_USE_VERIFY
 
 # Global settings instance
 settings = Settings()

@@ -284,41 +284,62 @@ async def send_otp(request: SendOTPRequest, db: Session = Depends(get_db)):
     Telefon raqamga 6 raqamli tasdiqlash kodi yuboriladi.
     Kod 5 daqiqa davomida amal qiladi.
     """
-    # Generate OTP code
-    otp_code = generate_otp()
-    
-    # Set expiration time (5 minutes from now)
-    expires_at = datetime.utcnow() + timedelta(minutes=5)
-    
-    # Delete any existing unverified OTPs for this phone
-    db.query(OTPVerification).filter(
-        OTPVerification.phone == request.phone,
-        OTPVerification.is_verified == False
-    ).delete()
-    
-    # Create new OTP record
-    otp_record = OTPVerification(
-        phone=request.phone,
-        otp_code=otp_code,
-        expires_at=expires_at,
-        is_verified=False
-    )
-    
-    db.add(otp_record)
-    db.commit()
-    
-    # Send SMS via Twilio
+    # If Twilio Verify is enabled, trigger Verify service
     sms_sent = False
-    if sms_service.enabled:
-        success, message_sid = sms_service.send_otp(request.phone, otp_code)
-        if success:
+    if settings.twilio_enabled and getattr(settings, 'twilio_use_verify', False) and getattr(sms_service, 'use_verify', False):
+        # Clean up any previous unverified entries
+        db.query(OTPVerification).filter(
+            OTPVerification.phone == request.phone,
+            OTPVerification.is_verified == False
+        ).delete()
+
+        # Create a placeholder OTP record (code is not used in Verify flow)
+        expires_at = datetime.utcnow() + timedelta(minutes=5)
+        placeholder_record = OTPVerification(
+            phone=request.phone,
+            otp_code="VERIFY",  # placeholder
+            expires_at=expires_at,
+            is_verified=False
+        )
+        db.add(placeholder_record)
+        db.commit()
+
+        ok, info = sms_service.send_otp_via_verify(request.phone)
+        if ok:
             sms_sent = True
-            print(f"✅ SMS sent to {request.phone}. Message SID: {message_sid}")
+            print(f"✅ Verify SMS triggered to {request.phone}. Info: {info}")
         else:
-            print(f"⚠️ Failed to send SMS to {request.phone}")
+            print(f"⚠️ Failed to trigger Verify SMS to {request.phone}")
     else:
-        # Development mode - log OTP to console
-        print(f"📱 OTP for {request.phone}: {otp_code}")
+        # DB-based OTP flow (Messaging API or dev mode)
+        otp_code = generate_otp()
+        expires_at = datetime.utcnow() + timedelta(minutes=5)
+
+        db.query(OTPVerification).filter(
+            OTPVerification.phone == request.phone,
+            OTPVerification.is_verified == False
+        ).delete()
+
+        otp_record = OTPVerification(
+            phone=request.phone,
+            otp_code=otp_code,
+            expires_at=expires_at,
+            is_verified=False
+        )
+
+        db.add(otp_record)
+        db.commit()
+
+        if sms_service.enabled:
+            success, message_sid = sms_service.send_otp(request.phone, otp_code)
+            if success:
+                sms_sent = True
+                print(f"✅ SMS sent to {request.phone}. SID: {message_sid}")
+            else:
+                print(f"⚠️ Failed to send SMS to {request.phone}")
+        else:
+            # Development mode - log OTP to console
+            print(f"📱 OTP for {request.phone}: {otp_code}")
     
     response_data = {
         "message": f"Tasdiqlash kodi {request.phone} raqamiga yuborildi. Kod 5 daqiqa davomida amal qiladi.",
@@ -326,8 +347,8 @@ async def send_otp(request: SendOTPRequest, db: Session = Depends(get_db)):
         "expires_in": 300,  # 5 minutes in seconds
     }
     
-    # Only include OTP code in response if SMS was not sent (development mode)
-    if not sms_sent:
+    # Only include OTP code in response for development (non-Verify) mode when SMS not sent
+    if not sms_sent and not (settings.twilio_enabled and getattr(settings, 'twilio_use_verify', False)):
         response_data["otp_code"] = otp_code  # DEVELOPMENT ONLY
     
     return response_data
@@ -350,36 +371,64 @@ async def verify_otp(request: VerifyOTPRequest, db: Session = Depends(get_db)):
     Telefon raqamga yuborilgan 6 raqamli kodni tekshiradi.
     Agar kod to'g'ri bo'lsa, foydalanuvchi ma'lumotlarini to'ldirish uchun tayyor bo'ladi.
     """
-    # Find the latest OTP for this phone
-    otp_record = db.query(OTPVerification).filter(
-        OTPVerification.phone == request.phone,
-        OTPVerification.is_verified == False
-    ).order_by(OTPVerification.created_at.desc()).first()
-    
-    if not otp_record:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Tasdiqlash kodi topilmadi. Iltimos, qaytadan kod so'rang."
-        )
-    
-    # Check if OTP is expired
-    if datetime.utcnow() > otp_record.expires_at:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Tasdiqlash kodi muddati tugagan. Iltimos, qaytadan kod so'rang."
-        )
-    
-    # Verify OTP code
-    if otp_record.otp_code != request.otp_code:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Tasdiqlash kodi noto'g'ri. Iltimos, qaytadan urinib ko'ring."
-        )
-    
-    # Mark OTP as verified
-    otp_record.is_verified = True
-    otp_record.verified_at = datetime.utcnow()
-    db.commit()
+    # Twilio Verify flow
+    if settings.twilio_enabled and getattr(settings, 'twilio_use_verify', False) and getattr(sms_service, 'use_verify', False):
+        approved, status_txt = sms_service.verify_code_via_verify(request.phone, request.otp_code)
+        if not approved:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Tasdiqlash kodi noto'g'ri yoki muddati tugagan."
+            )
+        # Mark or create verification record for this phone
+        otp_record = db.query(OTPVerification).filter(
+            OTPVerification.phone == request.phone,
+            OTPVerification.is_verified == False
+        ).order_by(OTPVerification.created_at.desc()).first()
+        if not otp_record:
+            # Create a verified record so that complete-profile can proceed
+            otp_record = OTPVerification(
+                phone=request.phone,
+                otp_code="VERIFY",
+                expires_at=datetime.utcnow() + timedelta(minutes=5),
+                is_verified=True,
+                verified_at=datetime.utcnow(),
+            )
+            db.add(otp_record)
+        else:
+            otp_record.is_verified = True
+            otp_record.verified_at = datetime.utcnow()
+        db.commit()
+    else:
+        # DB-based OTP verification
+        otp_record = db.query(OTPVerification).filter(
+            OTPVerification.phone == request.phone,
+            OTPVerification.is_verified == False
+        ).order_by(OTPVerification.created_at.desc()).first()
+        
+        if not otp_record:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Tasdiqlash kodi topilmadi. Iltimos, qaytadan kod so'rang."
+            )
+        
+        # Check if OTP is expired
+        if datetime.utcnow() > otp_record.expires_at:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Tasdiqlash kodi muddati tugagan. Iltimos, qaytadan kod so'rang."
+            )
+        
+        # Verify OTP code
+        if otp_record.otp_code != request.otp_code:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Tasdiqlash kodi noto'g'ri. Iltimos, qaytadan urinib ko'ring."
+            )
+        
+        # Mark OTP as verified
+        otp_record.is_verified = True
+        otp_record.verified_at = datetime.utcnow()
+        db.commit()
     
     # Check if user already exists
     existing_user = db.query(User).filter(User.phone == request.phone).first()

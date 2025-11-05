@@ -12,11 +12,12 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from database import get_db
-from models import User, Ride, Payment, SystemConfig, Notification
+from models import User, Ride, Payment, SystemConfig, Notification, AdditionalService
 from schemas import (
     UserResponse, SystemStats, DailyAnalytics, WeeklyAnalytics, 
     MonthlyAnalytics, YearlyAnalytics, IncomeStats, AdminNotifyRequest,
-    VehicleTypePrice, PricingConfigResponse
+    VehicleTypePrice, PricingConfigResponse, AdditionalServiceCreate,
+    AdditionalServiceUpdate, AdditionalServiceResponse, AdditionalServiceToggle
 )
 from routers.auth import get_current_user
 from config import settings
@@ -890,3 +891,194 @@ async def calculate_fare_preview(
         "driver_earnings": round(driver_earnings, 2),
         "formula": f"{base_fare} + ({distance} × {per_km_rate}) + ({duration} × {per_minute_rate}) = {round(total_fare, 2)} so'm"
     }
+
+# ============= QOSHIMCHA XIZMATLAR (ADDITIONAL SERVICES) =============
+
+@router.get("/services", response_model=List[AdditionalServiceResponse])
+async def get_all_services_admin(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Barcha qo'shimcha xizmatlarni ko'rish (Admin)
+    
+    **Returns:**
+    - Barcha xizmatlar ro'yxati (faol va faol emas)
+    """
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required"
+        )
+    
+    services = db.query(AdditionalService).order_by(
+        AdditionalService.display_order
+    ).all()
+    
+    return services
+
+@router.post("/services", response_model=AdditionalServiceResponse, status_code=status.HTTP_201_CREATED)
+async def create_service(
+    service: AdditionalServiceCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Yangi qo'shimcha xizmat yaratish (Admin)
+    
+    **Request Body:**
+    - name: Xizmat nomi (unique, masalan: konditsioner)
+    - name_uz: O'zbekcha nomi
+    - name_ru: Ruscha nomi (optional)
+    - icon: Icon emoji yoki URL (optional)
+    - price: Narxi (UZS)
+    - is_active: Faol/Faol emas (default: True)
+    - display_order: Ko'rsatish tartibi (default: 0)
+    - description: Qisqa tavsif (optional)
+    
+    **Returns:**
+    - Yaratilgan xizmat ma'lumotlari
+    """
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required"
+        )
+    
+    # Check if service with this name already exists
+    existing = db.query(AdditionalService).filter(
+        AdditionalService.name == service.name
+    ).first()
+    
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Service with name '{service.name}' already exists"
+        )
+    
+    # Create new service
+    new_service = AdditionalService(**service.dict())
+    db.add(new_service)
+    db.commit()
+    db.refresh(new_service)
+    
+    return new_service
+
+@router.put("/services/{service_id}", response_model=AdditionalServiceResponse)
+async def update_service(
+    service_id: int,
+    service_update: AdditionalServiceUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Qo'shimcha xizmatni yangilash (Admin)
+    
+    **Path Parameters:**
+    - service_id: Xizmat ID raqami
+    
+    **Request Body:**
+    - name_uz: O'zbekcha nomi (optional)
+    - name_ru: Ruscha nomi (optional)
+    - icon: Icon (optional)
+    - price: Narxi (optional)
+    - is_active: Faol/Faol emas (optional)
+    - display_order: Ko'rsatish tartibi (optional)
+    - description: Tavsif (optional)
+    
+    **Returns:**
+    - Yangilangan xizmat ma'lumotlari
+    """
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required"
+        )
+    
+    service = db.query(AdditionalService).filter(
+        AdditionalService.id == service_id
+    ).first()
+    
+    if not service:
+        raise HTTPException(status_code=404, detail="Service not found")
+    
+    # Update only provided fields
+    update_data = service_update.dict(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(service, field, value)
+    
+    db.commit()
+    db.refresh(service)
+    
+    return service
+
+@router.delete("/services/{service_id}")
+async def delete_service(
+    service_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Qo'shimcha xizmatni o'chirish (Admin)
+    
+    **Path Parameters:**
+    - service_id: Xizmat ID raqami
+    
+    **Returns:**
+    - Xabar: Xizmat o'chirildi
+    """
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required"
+        )
+    
+    service = db.query(AdditionalService).filter(
+        AdditionalService.id == service_id
+    ).first()
+    
+    if not service:
+        raise HTTPException(status_code=404, detail="Service not found")
+    
+    db.delete(service)
+    db.commit()
+    
+    return {"message": "Service deleted successfully", "service_id": service_id}
+
+@router.put("/services/{service_id}/toggle", response_model=AdditionalServiceResponse)
+async def toggle_service(
+    service_id: int,
+    toggle: AdditionalServiceToggle,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Xizmatni faollashtirish/o'chirish (Admin)
+    
+    **Path Parameters:**
+    - service_id: Xizmat ID raqami
+    
+    **Request Body:**
+    - is_active: true yoki false
+    
+    **Returns:**
+    - Yangilangan xizmat ma'lumotlari
+    """
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required"
+        )
+    
+    service = db.query(AdditionalService).filter(
+        AdditionalService.id == service_id
+    ).first()
+    
+    if not service:
+        raise HTTPException(status_code=404, detail="Service not found")
+    
+    service.is_active = toggle.is_active
+    db.commit()
+    db.refresh(service)
+    
+    return service
