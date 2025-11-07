@@ -112,6 +112,98 @@ async def update_status(
     return {"message": "Status updated", "is_on_duty": ds.is_on_duty}
 
 
+@router.get("/rides/available")
+async def get_available_rides(
+    radius_km: float = 5.0,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Haydovchi uchun mavjud buyurtmalar ro'yxati
+    
+    **Query Parameters:**
+    - radius_km: Qidiruv radiusi (default: 5.0 km)
+    
+    **Returns:**
+    - Haydovchi joylashuvi atrofidagi barcha pending buyurtmalar
+    - Har bir buyurtma uchun: pickup/dropoff joylari, narx, masofa
+    """
+    require_driver(current_user)
+    
+    # Get driver's current location
+    if not current_user.current_location:
+        raise HTTPException(
+            status_code=400, 
+            detail="Joylashuvingiz aniqlanmadi. Iltimos, avval status API'da joylashuvni yuboring."
+        )
+    
+    try:
+        driver_loc = json.loads(current_user.current_location)
+        driver_lat = float(driver_loc.get("lat"))
+        driver_lng = float(driver_loc.get("lng"))
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid driver location format")
+    
+    # Get all pending rides
+    pending_rides = db.query(Ride).filter(
+        Ride.status == "pending",
+        Ride.pickup_location.isnot(None)
+    ).all()
+    
+    available_rides = []
+    
+    for ride in pending_rides:
+        try:
+            pickup = json.loads(ride.pickup_location) if ride.pickup_location else None
+            dropoff = json.loads(ride.dropoff_location) if ride.dropoff_location else None
+            
+            if not pickup or "lat" not in pickup or "lng" not in pickup:
+                continue
+            
+            # Calculate distance from driver to pickup location
+            distance_to_pickup = calculate_distance(
+                driver_lat, driver_lng,
+                float(pickup["lat"]), float(pickup["lng"])
+            )
+            
+            # Only include rides within radius
+            if distance_to_pickup <= radius_km:
+                # Calculate ride distance
+                ride_distance = 0.0
+                if dropoff and "lat" in dropoff and "lng" in dropoff:
+                    ride_distance = calculate_distance(
+                        float(pickup["lat"]), float(pickup["lng"]),
+                        float(dropoff["lat"]), float(dropoff["lng"])
+                    )
+                
+                available_rides.append({
+                    "id": ride.id,
+                    "pickup_location": pickup,
+                    "dropoff_location": dropoff,
+                    "fare": ride.fare,
+                    "duration": ride.duration,
+                    "vehicle_type": ride.vehicle_type,
+                    "distance_to_pickup": round(distance_to_pickup, 2),
+                    "ride_distance": round(ride_distance, 2),
+                    "created_at": ride.created_at.isoformat() if ride.created_at else None
+                })
+        except Exception:
+            continue
+    
+    # Sort by distance to pickup (closest first)
+    available_rides.sort(key=lambda x: x["distance_to_pickup"])
+    
+    return {
+        "rides": available_rides,
+        "total": len(available_rides),
+        "radius_km": radius_km,
+        "driver_location": {
+            "lat": driver_lat,
+            "lng": driver_lng
+        }
+    }
+
+
 @router.post("/rides/{ride_id}/accept")
 async def accept_ride(
     ride_id: int,
