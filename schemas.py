@@ -584,6 +584,7 @@ class VerifyOTPRequest(BaseModel):
 class CompleteProfileRequest(BaseModel):
     """Request to complete user profile after OTP verification"""
     phone: str = Field(..., pattern=r"^\+998\d{9}$", description="O'zbekiston telefon raqami formati")
+    password: str = Field(..., min_length=6, max_length=100, description="Parol (kamida 6 ta belgi)")
     first_name: str = Field(..., min_length=2, max_length=50, description="Ism")
     last_name: str = Field(..., min_length=2, max_length=50, description="Familiya")
     gender: str = Field(..., description="Jinsi (Erkak/Ayol)")
@@ -598,6 +599,7 @@ class CompleteProfileRequest(BaseModel):
         json_schema_extra = {
             "example": {
                 "phone": "+998901234567",
+                "password": "parolim123",
                 "first_name": "Falonchi",
                 "last_name": "Falonchiyev",
                 "gender": "Erkak",

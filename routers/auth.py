@@ -505,9 +505,8 @@ async def complete_profile(request: CompleteProfileRequest, db: Session = Depend
                 detail="Bu texpassport allaqachon ro'yxatdan o'tgan."
             )
     
-    # Generate a random password since we're using OTP authentication
-    random_password = ''.join(random.choices(string.ascii_letters + string.digits, k=16))
-    hashed_password = hash_password(random_password)
+    # Hash the user's provided password
+    hashed_password = hash_password(request.password)
 
     if existing_user:
         # Update existing user profile (idempotent behavior)
